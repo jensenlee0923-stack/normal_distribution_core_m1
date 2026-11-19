@@ -148,7 +148,7 @@
     .btn-glass-sec:hover { border-color: var(--accent-primary); color: var(--accent-pill-text); background: #FFFFFF; }
     .btn-glass-sec.active-chip {
       background: var(--accent-pill-bg);
-      border-color: var(--accent-pill-border);
+      border: 1px solid var(--accent-pill-border);
       color: var(--accent-pill-text);
       font-weight: 600;
     }
@@ -191,6 +191,19 @@
       cursor: pointer;
     }
     .hud-chip:hover, .hud-chip.active { background: #0284C7; border-color: #7DD3FC; color: #FFFFFF; }
+
+    .hud-scale-pill {
+      background: rgba(15, 23, 42, 0.74);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid rgba(125, 211, 252, 0.30);
+      color: #E0F2FE;
+      padding: 3px 8px;
+      border-radius: 7px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      pointer-events: none;
+    }
 
     .zoom-group {
       display: inline-flex;
@@ -289,8 +302,8 @@
         </div>
 
         <div class="hidden lg:block glass-subcard p-3 text-[11px] leading-relaxed text-mut">
-          <p class="font-semibold text-sec mb-0.5">iPad &amp; Touch Controls</p>
-          <p>1-finger drag to orbit, 2-finger pinch or <strong>&minus; / +</strong> to zoom, tap <strong>100%</strong> to re-fit.</p>
+          <p class="font-semibold text-sec mb-0.5">iPad &amp; Auto-Scale Bins</p>
+          <p>1-finger drag to orbit, 2-finger pinch or <strong>&minus; / +</strong> to zoom. Collector columns rescale automatically so large samples never flatten.</p>
         </div>
       </div>
 
@@ -298,7 +311,7 @@
       <div class="pt-2.5 border-t border-slate-200/80 px-1 text-[11px] leading-relaxed text-mut flex lg:block flex-wrap items-center justify-between gap-x-4">
         <p class="font-semibold text-sec">Cheung Chuk Shan College</p>
         <div>
-          <p>Creator: CS Lee x Gemini 4 Carbon</p>
+          <p>Creator: CS Lee x Geminin 4 Carbon</p>
           <p>Contributor: 2627 Class 5A</p>
         </div>
       </div>
@@ -342,15 +355,21 @@
             <div class="stage-viewport" id="stagePane">
               <div class="canvas-host" id="galton3dHost"></div>
 
-              <div class="absolute top-2.5 left-2.5 flex flex-wrap gap-1 z-10 max-w-[72%]">
-                <button type="button" class="hud-chip active" id="cam-slope" onclick="setCameraPreset('slope')">3D Slope</button>
-                <button type="button" class="hud-chip" id="cam-front" onclick="setCameraPreset('front')">Front</button>
-                <button type="button" class="hud-chip" id="cam-side" onclick="setCameraPreset('side')">Side</button>
-                <button type="button" class="hud-chip" id="cam-zoom" onclick="setCameraPreset('zoom')">Pegs</button>
+              <div class="absolute top-2.5 left-2.5 flex flex-col gap-1.5 z-10 max-w-[74%]">
+                <div class="flex flex-wrap gap-1">
+                  <button type="button" class="hud-chip active" id="cam-slope" onclick="setCameraPreset('slope')">3D Slope</button>
+                  <button type="button" class="hud-chip" id="cam-front" onclick="setCameraPreset('front')">Front</button>
+                  <button type="button" class="hud-chip" id="cam-side" onclick="setCameraPreset('side')">Side</button>
+                  <button type="button" class="hud-chip" id="cam-zoom" onclick="setCameraPreset('zoom')">Pegs</button>
+                </div>
+                <div>
+                  <span class="hud-scale-pill tabular-nums inline-block" id="binScaleBadge">Bin Scale: 1 sphere = 1 ball</span>
+                </div>
               </div>
 
-              <div class="absolute top-2.5 right-2.5 z-10">
+              <div class="absolute top-2.5 right-2.5 flex flex-col items-end gap-1 z-10">
                 <button type="button" class="hud-chip" id="stageBgBtn" onclick="toggleStageTheme()">Dark Stage</button>
+                <button type="button" class="hud-chip active" id="curve3dBtn" onclick="toggle3DCurve()">3D Curve: ON</button>
               </div>
 
               <div class="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-1.5 flex-wrap z-10 pointer-events-none">
@@ -389,7 +408,7 @@
               </div>
               <div class="flex flex-wrap items-center gap-3 text-xs text-sec">
                 <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                  <input type="checkbox" id="chkNormal" checked onchange="drawChart()" />
+                  <input type="checkbox" id="chkNormal" checked onchange="onToggleNormalOverlay()" />
                   <span class="w-2.5 h-2.5 rounded-sm bg-sky-600 inline-block"></span><span>Normal</span>
                 </label>
                 <label id="lblChkBinom" class="hidden items-center gap-1.5 cursor-pointer select-none">
@@ -609,18 +628,21 @@
       document.getElementById('sideDot').className = 'w-1.5 h-1.5 rounded-full ' + (amb ? 'bg-amber-500' : 'bg-emerald-500');
     }
 
-    /* --- 3. 3D Rolling Apparatus & iPad Zoom --- */
+    /* --- 3. 3D Rolling Apparatus, Auto-Scaled Collector Bins & 3D Normal Curve --- */
     const b3d = {
       webgl: typeof window.THREE !== 'undefined',
       host: null, renderer: null, scene: null, camera: null,
-      boardGroup: null, dynGroup: null, traceGroup: null, coverMesh: null,
+      boardGroup: null, dynGroup: null, binGroup: null, traceGroup: null, coverMesh: null, curveMesh: null,
       fbCanvas: null, fbCtx: null,
-      fov: 38, tilt: 24, cover: true,
-      boardW: 5.4, boardH: 7.0, rowDy: 0.32, colDx: 0.36,
-      topY: 2.30, floorY: -3.30, ballR: 0.11, surfZ: 0.14,
-      pegs: [], flashes: [], active: [], stacks: [], maxStack: 9,
-      texReg: null, texTrace: null, zoom: 1.0, baseR: 11.2,
-      cam: { theta: -0.42, phi: 1.26, radius: 11.2, lookY: -0.06, tTheta: -0.42, tPhi: 1.26, tRadius: 11.2, tLookY: -0.06 },
+      fov: 38, tilt: 24, cover: true, showCurve3D: true,
+      boardW: 5.4, boardH: 7.1, rowDy: 0.25, colDx: 0.35,
+      topY: 2.42, binTopY: -0.64, floorY: -3.42, ballR: 0.093, stackStep: 0.176, surfZ: 0.14,
+      pegs: [], flashes: [], active: [],
+      binPools: [], binBars: [], dispCounts: [], barHeights: [],
+      maxStack: 14, ballsPerSphere: 1.0, lastTracedBin: -1,
+      texReg: null, texTrace: null, matReg: null, matTrace: null, sphereGeo: null,
+      zoom: 1.0, baseR: 11.2,
+      cam: { theta: -0.42, phi: 1.26, radius: 11.2, lookY: -0.10, tTheta: -0.42, tPhi: 1.26, tRadius: 11.2, tLookY: -0.10 },
       ptrs: new Map(), pinchDist: 0, pinchZoom: 1.0, lastX: 0, lastY: 0
     };
 
@@ -641,6 +663,38 @@
       return c;
     }
 
+    /* Builds a crisp 3D ribbon mesh so lines render boldly on iPad Safari WebGL */
+    function makeRibbonMesh(pts, halfWidth, hexColor, opacity) {
+      const count = pts.length;
+      if (count < 2) return null;
+      const positions = new Float32Array(count * 2 * 3);
+      const indices = [];
+      for (let i = 0; i < count; i++) {
+        const pPrev = pts[Math.max(0, i - 1)], pNext = pts[Math.min(count - 1, i + 1)];
+        let tx = pNext.x - pPrev.x, ty = pNext.y - pPrev.y;
+        const len = Math.hypot(tx, ty) || 1;
+        const nx = -ty / len, ny = tx / len;
+        const base = i * 6;
+        positions[base]     = pts[i].x + nx * halfWidth;
+        positions[base + 1] = pts[i].y + ny * halfWidth;
+        positions[base + 2] = pts[i].z;
+        positions[base + 3] = pts[i].x - nx * halfWidth;
+        positions[base + 4] = pts[i].y - ny * halfWidth;
+        positions[base + 5] = pts[i].z;
+        if (i < count - 1) {
+          const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+          indices.push(a, b, c, b, d, c);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setIndex(indices);
+      const mat = new THREE.MeshBasicMaterial({
+        color: hexColor, transparent: opacity < 1, opacity, side: THREE.DoubleSide, depthWrite: false
+      });
+      return new THREE.Mesh(geo, mat);
+    }
+
     function computeBaseRadius() {
       if (!b3d.host) return 11.2;
       const r = b3d.host.getBoundingClientRect();
@@ -655,10 +709,106 @@
       document.getElementById('zoomPctBtn').textContent = Math.round(b3d.zoom * 100) + '%';
     }
     function stepZoom(d) { b3d.zoom = Math.max(0.60, Math.min(2.50, b3d.zoom + d)); applyZoom(false); }
-    function resetZoom() { b3d.zoom = 1.0; b3d.cam.tLookY = -0.06; applyZoom(false); }
+    function resetZoom() { b3d.zoom = 1.0; b3d.cam.tLookY = -0.10; applyZoom(false); }
 
     function pegPos(r, j) { return { x: (j - r / 2) * b3d.colDx, y: b3d.topY - r * b3d.rowDy }; }
     function binX(k) { return (k - sim.rows / 2) * b3d.colDx; }
+    function getBinLandingY(k) {
+      const h = b3d.barHeights[k] || 0;
+      return Math.min(b3d.binTopY - b3d.ballR, b3d.floorY + b3d.ballR + h);
+    }
+
+    /* Proportionally rescales all 3D collector stacks & 3D bell curve so bins never plateau */
+    function sync3DBins() {
+      const n = sim.rows;
+      const { mu, sig } = getMoments();
+      let maxBin = 0;
+      for (let k = 0; k <= n; k++) if (sim.bins[k] > maxBin) maxBin = sim.bins[k];
+      const theoPeak = sim.total * (sig > 0 ? normalPDF(mu, mu, sig) : 0.5);
+
+      const peakRef = Math.max(b3d.maxStack, maxBin, theoPeak);
+      b3d.ballsPerSphere = peakRef / b3d.maxStack;
+
+      const badge = document.getElementById('binScaleBadge');
+      if (b3d.ballsPerSphere <= 1.001) {
+        badge.textContent = `Bin Scale: 1 sphere = 1 ball (Cap ${b3d.maxStack})`;
+      } else {
+        badge.textContent = `Auto-Scaled: 1 sphere ≈ ${b3d.ballsPerSphere.toFixed(1)} balls`;
+      }
+
+      for (let k = 0; k <= n; k++) {
+        const exactSpheres = sim.bins[k] / b3d.ballsPerSphere;
+        const sphCount = sim.bins[k] === 0 ? 0 : Math.min(b3d.maxStack, Math.round(exactSpheres));
+        const barH = Math.min(b3d.maxStack * b3d.stackStep, exactSpheres * b3d.stackStep);
+
+        b3d.dispCounts[k] = sphCount;
+        b3d.barHeights[k] = barH;
+
+        if (b3d.webgl) {
+          const bar = b3d.binBars[k];
+          if (bar) {
+            bar.visible = barH > 0.008;
+            bar.scale.y = Math.max(0.008, barH);
+            bar.position.y = b3d.floorY + barH / 2;
+          }
+          const pool = b3d.binPools[k];
+          if (pool) {
+            for (let s = 0; s < pool.length; s++) {
+              const m = pool[s];
+              m.visible = s < sphCount;
+              if (m.visible) {
+                const isTopTraced = (k === b3d.lastTracedBin && s === sphCount - 1);
+                m.material = isTopTraced ? b3d.matTrace : b3d.matReg;
+              }
+            }
+          }
+        }
+      }
+
+      /* Keep any in-flight balls aligned with the rescaled stack top */
+      for (let i = 0; i < b3d.active.length; i++) {
+        const a = b3d.active[i];
+        a.wps[a.wps.length - 1].y = getBinLandingY(a.bin);
+      }
+
+      update3DNormalCurve();
+    }
+
+    function update3DNormalCurve() {
+      if (!b3d.webgl || !b3d.boardGroup) return;
+      if (b3d.curveMesh) {
+        b3d.boardGroup.remove(b3d.curveMesh);
+        b3d.curveMesh.geometry.dispose();
+        b3d.curveMesh.material.dispose();
+        b3d.curveMesh = null;
+      }
+      if (!b3d.showCurve3D) return;
+
+      const n = sim.rows;
+      const { mu, sig } = getMoments();
+      if (sig <= 1e-6) return;
+
+      const peakPdf = normalPDF(mu, mu, sig);
+      const pts = [];
+      const steps = 84;
+      const kMin = -0.55, kMax = n + 0.55;
+
+      for (let i = 0; i <= steps; i++) {
+        const kv = kMin + (kMax - kMin) * (i / steps);
+        const x = (kv - n / 2) * b3d.colDx;
+        let h;
+        if (sim.total === 0) {
+          /* Target bell-curve preview before the first drop */
+          h = (normalPDF(kv, mu, sig) / peakPdf) * (b3d.maxStack * 0.78 * b3d.stackStep);
+        } else {
+          h = ((sim.total * normalPDF(kv, mu, sig)) / b3d.ballsPerSphere) * b3d.stackStep;
+        }
+        pts.push(new THREE.Vector3(x, b3d.floorY + b3d.ballR * 0.45 + h, 0.315));
+      }
+
+      b3d.curveMesh = makeRibbonMesh(pts, 0.036, sim.total === 0 ? 0x7dd3fc : 0x38bdf8, sim.total === 0 ? 0.48 : 0.92);
+      if (b3d.curveMesh) b3d.boardGroup.add(b3d.curveMesh);
+    }
 
     function init3D() {
       b3d.host = document.getElementById('galton3dHost');
@@ -679,10 +829,13 @@
 
           b3d.texReg = new THREE.CanvasTexture(makeStripedTex('#0284C7', '#F8FAFC', '#0F172A'));
           b3d.texTrace = new THREE.CanvasTexture(makeStripedTex('#F59E0B', '#FEF9C3', '#78350F'));
+          b3d.matReg = new THREE.MeshStandardMaterial({ map: b3d.texReg, roughness: 0.22, metalness: 0.10 });
+          b3d.matTrace = new THREE.MeshStandardMaterial({
+            map: b3d.texTrace, roughness: 0.20, metalness: 0.12,
+            emissive: new THREE.Color(0x663c00), emissiveIntensity: 0.35
+          });
+
           b3d.boardGroup = new THREE.Group();
-          b3d.dynGroup = new THREE.Group();
-          b3d.traceGroup = new THREE.Group();
-          b3d.boardGroup.add(b3d.dynGroup, b3d.traceGroup);
           b3d.scene.add(b3d.boardGroup);
           document.getElementById('engineBadge').textContent = 'WebGL 3D';
         } catch (e) { b3d.webgl = false; }
@@ -703,13 +856,26 @@
 
     function rebuildGeometry() {
       const n = sim.rows;
-      b3d.rowDy = 3.72 / n;
-      b3d.colDx = Math.min(0.42, 4.45 / (n + 1));
-      b3d.topY = 2.25; b3d.floorY = -3.28;
-      b3d.ballR = Math.max(0.072, Math.min(0.125, b3d.colDx * 0.29));
+      /* Balanced 50/50 Peg-to-Collector Chamber Proportions */
+      b3d.topY = 2.42;
+      const pegSpan = 2.74;
+      b3d.rowDy = pegSpan / Math.max(1, n - 1);
+      b3d.colDx = Math.min(0.39, 4.48 / (n + 1));
+      const lastPegY = b3d.topY - (n - 1) * b3d.rowDy;
+      b3d.binTopY = lastPegY - 0.30;
+      b3d.floorY = -3.42;
+
+      b3d.ballR = Math.max(0.068, Math.min(0.102, b3d.colDx * 0.27));
+      b3d.stackStep = b3d.ballR * 1.90;
       b3d.surfZ = 0.09 + b3d.ballR;
+      const usableBinH = Math.abs(b3d.floorY - b3d.binTopY) - 0.22;
+      b3d.maxStack = Math.max(12, Math.floor(usableBinH / b3d.stackStep));
+
       b3d.pegs = []; b3d.flashes = []; b3d.active = [];
-      b3d.stacks = Array.from({ length: n + 1 }, () => []);
+      b3d.binPools = []; b3d.binBars = [];
+      b3d.dispCounts = new Array(n + 1).fill(0);
+      b3d.barHeights = new Array(n + 1).fill(0);
+      b3d.lastTracedBin = -1;
 
       for (let r = 0; r < n; r++) {
         const row = [];
@@ -717,12 +883,22 @@
         b3d.pegs.push(row);
       }
 
-      if (!b3d.webgl || !b3d.boardGroup) return;
+      if (!b3d.webgl || !b3d.boardGroup) {
+        sync3DBins();
+        return;
+      }
+
       while (b3d.boardGroup.children.length > 0) b3d.boardGroup.remove(b3d.boardGroup.children[0]);
-      b3d.dynGroup = new THREE.Group(); b3d.traceGroup = new THREE.Group();
+      b3d.dynGroup = new THREE.Group();
+      b3d.binGroup = new THREE.Group();
+      b3d.traceGroup = new THREE.Group();
+      b3d.curveMesh = null;
 
       const W = b3d.boardW, H = b3d.boardH;
-      const slab = new THREE.Mesh(new THREE.BoxGeometry(W, H, 0.16), new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, metalness: 0.15 }));
+      const slab = new THREE.Mesh(
+        new THREE.BoxGeometry(W, H, 0.16),
+        new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.65, metalness: 0.15 })
+      );
       slab.position.set(0, -0.18, 0); b3d.boardGroup.add(slab);
 
       const frameMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.35, metalness: 0.65 });
@@ -734,12 +910,12 @@
       botRail.position.set(0, b3d.floorY - 0.09, 0.10); b3d.boardGroup.add(botRail);
 
       [-1, 1].forEach(s => {
-        const f = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.10, 0.28), frameMat);
-        f.position.set(s * 0.90, b3d.topY + 0.62, 0.14); f.rotation.z = s * 0.40;
+        const f = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.10, 0.28), frameMat);
+        f.position.set(s * 0.88, b3d.topY + 0.54, 0.14); f.rotation.z = s * 0.38;
         b3d.boardGroup.add(f);
       });
 
-      const pegGeo = new THREE.CylinderGeometry(b3d.ballR * 0.44, b3d.ballR * 0.44, 0.28, 14);
+      const pegGeo = new THREE.CylinderGeometry(b3d.ballR * 0.42, b3d.ballR * 0.42, 0.28, 14);
       pegGeo.rotateX(Math.PI / 2);
       const pegMat = new THREE.MeshStandardMaterial({ color: 0xeab308, metalness: 0.75, roughness: 0.25 });
       for (let r = 0; r < n; r++) {
@@ -751,9 +927,10 @@
         }
       }
 
-      const binH = Math.abs(b3d.floorY - (b3d.topY - (n - 1) * b3d.rowDy - 0.36));
+      /* Tall Collector Bin Dividers */
+      const binH = Math.abs(b3d.floorY - b3d.binTopY);
       const binMidY = b3d.floorY + binH / 2;
-      const divGeo = new THREE.BoxGeometry(0.035, binH, 0.28);
+      const divGeo = new THREE.BoxGeometry(0.032, binH, 0.28);
       const divMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.4, roughness: 0.4 });
       for (let k = 0; k <= n + 1; k++) {
         const d = new THREE.Mesh(divGeo, divMat);
@@ -761,20 +938,56 @@
         b3d.boardGroup.add(d);
       }
 
+      /* Pre-allocated Continuous Proportional Bars + Pooled 3D Spheres per Bin */
+      b3d.sphereGeo = new THREE.SphereGeometry(b3d.ballR, 20, 14);
+      const barGeo = new THREE.BoxGeometry(b3d.colDx * 0.74, 1, b3d.ballR * 1.15);
+      const barMat = new THREE.MeshPhongMaterial({
+        color: 0x0ea5e9, emissive: 0x0369a1, emissiveIntensity: 0.25,
+        transparent: true, opacity: 0.26, depthWrite: false
+      });
+
+      for (let k = 0; k <= n; k++) {
+        const x = binX(k);
+        const bar = new THREE.Mesh(barGeo, barMat);
+        bar.position.set(x, b3d.floorY, 0.13);
+        bar.visible = false;
+        b3d.binGroup.add(bar);
+        b3d.binBars.push(bar);
+
+        const pool = [];
+        for (let s = 0; s < b3d.maxStack; s++) {
+          const sph = new THREE.Mesh(b3d.sphereGeo, b3d.matReg);
+          sph.position.set(x, b3d.floorY + b3d.ballR + s * b3d.stackStep, b3d.surfZ);
+          sph.rotation.set((k * 0.7 + s * 1.1) % 3.14, (k * 1.3 + s * 0.9) % 3.14, 0);
+          sph.visible = false;
+          b3d.binGroup.add(sph);
+          pool.push(sph);
+        }
+        b3d.binPools.push(pool);
+      }
+
       b3d.coverMesh = new THREE.Mesh(
         new THREE.PlaneGeometry(W - 0.06, H - 0.08),
-        new THREE.MeshPhongMaterial({ color: 0xe0f2fe, specular: 0xffffff, shininess: 110, transparent: true, opacity: 0.13, depthWrite: false })
+        new THREE.MeshPhongMaterial({ color: 0xe0f2fe, specular: 0xffffff, shininess: 110, transparent: true, opacity: 0.12, depthWrite: false })
       );
-      b3d.coverMesh.position.set(0, -0.18, 0.31);
+      b3d.coverMesh.position.set(0, -0.18, 0.305);
       b3d.coverMesh.visible = b3d.cover;
-      b3d.boardGroup.add(b3d.coverMesh, b3d.dynGroup, b3d.traceGroup);
+      b3d.boardGroup.add(b3d.binGroup, b3d.dynGroup, b3d.traceGroup, b3d.coverMesh);
       b3d.boardGroup.rotation.x = -(b3d.tilt * Math.PI) / 180;
+
       document.getElementById('specTag').textContent = `n = ${n} · ${b3d.tilt}°`;
+      sync3DBins();
     }
 
     function clearTrace() {
+      b3d.lastTracedBin = -1;
       if (b3d.webgl && b3d.traceGroup) {
-        while (b3d.traceGroup.children.length > 0) b3d.traceGroup.remove(b3d.traceGroup.children[0]);
+        while (b3d.traceGroup.children.length > 0) {
+          const ch = b3d.traceGroup.children[0];
+          b3d.traceGroup.remove(ch);
+          if (ch.geometry) ch.geometry.dispose();
+          if (ch.material) ch.material.dispose();
+        }
       }
     }
 
@@ -786,34 +999,34 @@
         decisions.push(goR ? 1 : 0);
         if (goR) rights++;
       }
-      const wps = [{ x: 0, y: b3d.topY + 0.78 }, { x: 0, y: b3d.topY }];
+      const startY = b3d.topY + 0.68;
+      const wps = [{ x: 0, y: startY }, { x: 0, y: b3d.topY }];
       let rSofar = 0;
       for (let r = 0; r < n; r++) {
         rSofar += decisions[r];
         if (r < n - 1) wps.push(pegPos(r + 1, rSofar));
         else {
-          const fx = binX(rights), stackCount = Math.min(b3d.maxStack, b3d.stacks[rights].length);
-          wps.push({ x: fx, y: b3d.topY - (n - 1) * b3d.rowDy - 0.34 });
-          wps.push({ x: fx, y: b3d.floorY + b3d.ballR + stackCount * (b3d.ballR * 1.92) });
+          const fx = binX(rights);
+          wps.push({ x: fx, y: b3d.binTopY + 0.05 });
+          wps.push({ x: fx, y: getBinLandingY(rights) });
         }
       }
       if (traced) {
         clearTrace();
+        sync3DBins();
         setStatus('amber', `Tracing 1 sphere across ${n} rows...`);
       }
       let mesh = null;
       if (b3d.webgl && b3d.dynGroup) {
         mesh = new THREE.Mesh(
-          new THREE.SphereGeometry(b3d.ballR * (traced ? 1.15 : 1.0), 22, 16),
-          new THREE.MeshStandardMaterial({
-            map: traced ? b3d.texTrace : b3d.texReg, roughness: 0.22, metalness: 0.10,
-            emissive: traced ? new THREE.Color(0x663c00) : new THREE.Color(0x000000), emissiveIntensity: traced ? 0.35 : 0
-          })
+          b3d.sphereGeo,
+          traced ? b3d.matTrace : b3d.matReg
         );
-        mesh.position.set(0, b3d.topY + 0.78, b3d.surfZ);
+        if (traced) mesh.scale.setScalar(1.16);
+        mesh.position.set(0, startY, b3d.surfZ);
         b3d.dynGroup.add(mesh);
       }
-      b3d.active.push({ wps, decisions, bin: rights, seg: 0, u: 0, x: 0, y: b3d.topY + 0.78, rx: 0, ry: 0, traced, mesh });
+      b3d.active.push({ wps, decisions, bin: rights, seg: 0, u: 0, x: 0, y: startY, rx: 0, ry: 0, traced, mesh });
     }
 
     function flashPeg(r, j, traced) {
@@ -825,18 +1038,14 @@
     }
 
     function settleBall(k, mesh, traced) {
+      if (mesh && b3d.dynGroup) b3d.dynGroup.remove(mesh);
       sim.bins[k]++; sim.total++; sim.sumX += k; sim.sumX2 += k * k;
       if (traced) {
+        b3d.lastTracedBin = k;
         const { mu, sig } = getMoments(), z = sig > 0 ? ((k - mu) / sig).toFixed(2) : '0.00';
         setStatus('emerald', `Traced ball settled in Bin x = ${k} (${k} Right, ${sim.rows - k} Left · z = ${z})`);
       }
-      if (b3d.stacks[k].length < b3d.maxStack) {
-        const y = b3d.floorY + b3d.ballR + b3d.stacks[k].length * (b3d.ballR * 1.92);
-        if (mesh) mesh.position.set(binX(k), y, b3d.surfZ);
-        b3d.stacks[k].push({ x: binX(k), y, traced, mesh });
-      } else if (mesh && b3d.dynGroup) {
-        b3d.dynGroup.remove(mesh);
-      }
+      sync3DBins();
       refreshUI();
     }
 
@@ -846,22 +1055,9 @@
         let k = 0;
         for (let r = 0; r < n; r++) if (Math.random() < sim.p) k++;
         sim.bins[k]++; sim.total++; sim.sumX += k; sim.sumX2 += k * k;
-        if (b3d.stacks[k].length < b3d.maxStack) {
-          const x = binX(k), y = b3d.floorY + b3d.ballR + b3d.stacks[k].length * (b3d.ballR * 1.92);
-          let mesh = null;
-          if (b3d.webgl && b3d.dynGroup) {
-            mesh = new THREE.Mesh(
-              new THREE.SphereGeometry(b3d.ballR, 18, 14),
-              new THREE.MeshStandardMaterial({ map: b3d.texReg, roughness: 0.24, metalness: 0.1 })
-            );
-            mesh.position.set(x, y, b3d.surfZ);
-            mesh.rotation.set(Math.random() * 3, Math.random() * 3, 0);
-            b3d.dynGroup.add(mesh);
-          }
-          b3d.stacks[k].push({ x, y, traced: false, mesh });
-        }
       }
-      setStatus('emerald', `Added +${count.toLocaleString()} trials (Total N = ${sim.total.toLocaleString()})`);
+      sync3DBins();
+      setStatus('emerald', `Added +${count.toLocaleString()} trials (Total N = ${sim.total.toLocaleString()} · 3D columns auto-scaled)`);
       refreshUI();
     }
 
@@ -905,8 +1101,11 @@
         }
         if (b.u >= 1) {
           if (b.traced && b3d.webgl && b3d.traceGroup) {
-            const pts = [new THREE.Vector3(p0.x, p0.y, b3d.surfZ), new THREE.Vector3(p1.x, p1.y, b3d.surfZ)];
-            b3d.traceGroup.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0xfbbf24 })));
+            const segRibbon = makeRibbonMesh(
+              [new THREE.Vector3(p0.x, p0.y, b3d.surfZ + 0.02), new THREE.Vector3(p1.x, p1.y, b3d.surfZ + 0.02)],
+              0.022, 0xfbbf24, 0.95
+            );
+            if (segRibbon) b3d.traceGroup.add(segRibbon);
           }
           if (b.seg >= 0 && b.seg < sim.rows) {
             let rCount = 0; for (let k = 0; k < b.seg; k++) rCount += b.decisions[k];
@@ -952,7 +1151,7 @@
       }
       b3d.pegs.forEach(row => row.forEach(p => {
         const q = proj(p.x, p.y, 0.14);
-        ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(2, b3d.ballR * 0.45 * q.sc), 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(q.x, q.y, Math.max(2, b3d.ballR * 0.42 * q.sc), 0, Math.PI * 2);
         ctx.fillStyle = '#EAB308'; ctx.fill();
       }));
       const drawSphere = (x, y, traced) => {
@@ -960,8 +1159,26 @@
         ctx.beginPath(); ctx.arc(q.x, q.y, rad, 0, Math.PI * 2);
         ctx.fillStyle = traced ? '#F59E0B' : '#0284C7'; ctx.fill();
       };
-      b3d.stacks.forEach(stArr => stArr.forEach(s => drawSphere(s.x, s.y, s.traced)));
+      for (let k = 0; k <= sim.rows; k++) {
+        const cnt = b3d.dispCounts[k] || 0, x = binX(k);
+        for (let s = 0; s < cnt; s++) {
+          drawSphere(x, b3d.floorY + b3d.ballR + s * b3d.stackStep, k === b3d.lastTracedBin && s === cnt - 1);
+        }
+      }
       b3d.active.forEach(a => drawSphere(a.x, a.y, a.traced));
+      if (b3d.showCurve3D) {
+        const { mu, sig } = getMoments(), peakPdf = normalPDF(mu, mu, sig);
+        ctx.beginPath();
+        for (let i = 0; i <= 70; i++) {
+          const kv = -0.55 + (sim.rows + 1.1) * (i / 70), x = (kv - sim.rows / 2) * b3d.colDx;
+          const hh = sim.total === 0
+            ? (normalPDF(kv, mu, sig) / peakPdf) * (b3d.maxStack * 0.78 * b3d.stackStep)
+            : ((sim.total * normalPDF(kv, mu, sig)) / b3d.ballsPerSphere) * b3d.stackStep;
+          const q = proj(x, b3d.floorY + b3d.ballR * 0.45 + hh, 0.31);
+          if (i === 0) ctx.moveTo(q.x, q.y); else ctx.lineTo(q.x, q.y);
+        }
+        ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 2.4; ctx.stroke();
+      }
       ctx.restore();
     }
 
@@ -1013,10 +1230,10 @@
 
     function setCameraPreset(p) {
       ['slope', 'front', 'side', 'zoom'].forEach(id => document.getElementById('cam-' + id).classList.toggle('active', id === p));
-      if (p === 'slope') { b3d.cam.tTheta = -0.42; b3d.cam.tPhi = 1.26; b3d.cam.tLookY = -0.06; b3d.zoom = 1.0; }
-      else if (p === 'front') { b3d.cam.tTheta = 0; b3d.cam.tPhi = 1.48; b3d.cam.tLookY = -0.06; b3d.zoom = 1.0; }
-      else if (p === 'side') { b3d.cam.tTheta = -1.02; b3d.cam.tPhi = 1.30; b3d.cam.tLookY = -0.06; b3d.zoom = 0.96; }
-      else if (p === 'zoom') { b3d.cam.tTheta = -0.24; b3d.cam.tPhi = 1.32; b3d.cam.tLookY = 0.65; b3d.zoom = 1.65; }
+      if (p === 'slope') { b3d.cam.tTheta = -0.42; b3d.cam.tPhi = 1.26; b3d.cam.tLookY = -0.10; b3d.zoom = 1.0; }
+      else if (p === 'front') { b3d.cam.tTheta = 0; b3d.cam.tPhi = 1.48; b3d.cam.tLookY = -0.10; b3d.zoom = 1.0; }
+      else if (p === 'side') { b3d.cam.tTheta = -1.02; b3d.cam.tPhi = 1.30; b3d.cam.tLookY = -0.10; b3d.zoom = 0.96; }
+      else if (p === 'zoom') { b3d.cam.tTheta = -0.24; b3d.cam.tPhi = 1.32; b3d.cam.tLookY = 0.80; b3d.zoom = 1.65; }
       applyZoom(false);
     }
     function toggleCover() {
@@ -1024,6 +1241,16 @@
       if (b3d.coverMesh) b3d.coverMesh.visible = b3d.cover;
       const btn = document.getElementById('coverBtn');
       btn.textContent = b3d.cover ? 'Cover: ON' : 'Cover: Off'; btn.classList.toggle('active', b3d.cover);
+    }
+    function toggle3DCurve() {
+      b3d.showCurve3D = !b3d.showCurve3D;
+      const btn = document.getElementById('curve3dBtn');
+      btn.textContent = b3d.showCurve3D ? '3D Curve: ON' : '3D Curve: Off';
+      btn.classList.toggle('active', b3d.showCurve3D);
+      update3DNormalCurve();
+    }
+    function onToggleNormalOverlay() {
+      drawChart();
     }
     function cycleTilt() {
       b3d.tilt = b3d.tilt === 24 ? 34 : b3d.tilt === 34 ? 16 : 24;
@@ -1297,6 +1524,7 @@
       sim.p = parseFloat(val);
       document.getElementById('lblProbVal').textContent = sim.p.toFixed(2);
       document.getElementById('topBadge').textContent = `HKDSE M1 · p = ${sim.p.toFixed(2)}`;
+      update3DNormalCurve();
       resetBoard();
     }
     function onSpeedChange(val) {
