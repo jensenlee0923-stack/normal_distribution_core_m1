@@ -1,0 +1,2124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>3D Galton Board Simulator — HKDSE Core &amp; M1</title>
+  <!-- Three.js WebGL Engine (with automatic built-in offline 3D perspective fallback) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111827;
+      --panel-alt: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --primary: #0ea5e9;
+      --primary-hover: #0284c7;
+      --accent: #10b981;
+      --amber: #f59e0b;
+      --violet: #8b5cf6;
+      --rose: #f43f5e;
+      --card-shadow: 0 4px 18px rgba(0, 0, 0, 0.28);
+      --radius: 12px;
+    }
+
+    body.projector-light {
+      --bg: #f1f5f9;
+      --panel: #ffffff;
+      --panel-alt: #f8fafc;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #475569;
+      --primary: #0284c7;
+      --primary-hover: #0369a1;
+      --accent: #059669;
+      --amber: #d97706;
+      --violet: #7c3aed;
+      --rose: #e11d48;
+      --card-shadow: 0 2px 12px rgba(15, 23, 42, 0.08);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    /* Top Bar */
+    header {
+      background: #090d16;
+      color: #f8fafc;
+      padding: 9px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      border-bottom: 1px solid #1e293b;
+      flex-shrink: 0;
+      z-index: 30;
+    }
+    body.projector-light header {
+      background: #0f172a;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.02rem;
+      letter-spacing: -0.01em;
+    }
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #38bdf8, #0284c7);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.85rem;
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(14, 165, 233, 0.4);
+    }
+
+    .mode-switch {
+      display: flex;
+      background: #1e293b;
+      padding: 3px;
+      border-radius: 999px;
+      gap: 4px;
+      border: 1px solid #334155;
+    }
+    .mode-btn {
+      border: none;
+      background: transparent;
+      color: #cbd5e1;
+      padding: 6px 15px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.16s ease;
+    }
+    .mode-btn.active[data-mode="core"] {
+      background: #0ea5e9;
+      color: #fff;
+    }
+    .mode-btn.active[data-mode="m1"] {
+      background: #8b5cf6;
+      color: #fff;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill-btn {
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #f8fafc;
+      padding: 5px 12px;
+      border-radius: 8px;
+      font-size: 0.76rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .pill-btn:hover { background: #334155; }
+    .pill-btn.active { background: #0f766e; border-color: #14b8a6; }
+
+    /* Main Split Layout */
+    .workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: minmax(360px, 46%) 1fr;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    /* Left Pane: 3D Inclined Galton Board */
+    .stage-pane {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      background: radial-gradient(circle at 50% 32%, #172554 0%, #090d16 100%);
+      overflow: hidden;
+      user-select: none;
+      touch-action: none;
+    }
+    body.projector-light .stage-pane {
+      background: radial-gradient(circle at 50% 32%, #e0f2fe 0%, #cbd5e1 100%);
+    }
+    .canvas-3d-host {
+      width: 100%;
+      height: 100%;
+      flex: 1;
+    }
+    .canvas-3d-host canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* 3D HUD Overlays */
+    .hud-tl {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      pointer-events: none;
+      max-width: 60%;
+    }
+    .hud-box {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(6px);
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      color: #f8fafc;
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 0.73rem;
+      line-height: 1.38;
+    }
+    .hud-box strong { color: #38bdf8; }
+    .hud-box .amber { color: #fbbf24; font-weight: 700; }
+
+    .hud-tr {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      justify-content: flex-end;
+      max-width: 40%;
+    }
+    .cam-chip {
+      background: rgba(15, 23, 42, 0.80);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      color: #e2e8f0;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .cam-chip:hover, .cam-chip.active {
+      background: #0284c7;
+      border-color: #7dd3fc;
+      color: #ffffff;
+    }
+
+    .hud-bottom {
+      position: absolute;
+      bottom: 8px;
+      left: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      font-size: 0.7rem;
+      color: #cbd5e1;
+    }
+    body.projector-light .hud-bottom { color: #1e293b; font-weight: 600; }
+    .hud-bottom-left {
+      pointer-events: auto;
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+
+    /* Right Pane: Controls, Live Chart & Curriculum Cards */
+    .analysis-pane {
+      overflow-y: auto;
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 13px 15px;
+      box-shadow: var(--card-shadow);
+    }
+    .card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 9px;
+      flex-wrap: wrap;
+    }
+    .card-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      background: rgba(14, 165, 233, 0.18);
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.35);
+    }
+    body.projector-light .tag {
+      background: #e0f2fe;
+      color: #0369a1;
+      border-color: #bae6fd;
+    }
+    .tag.m1-tag {
+      background: rgba(139, 92, 246, 0.2);
+      color: #c4b5fd;
+      border-color: rgba(167, 139, 250, 0.4);
+    }
+    body.projector-light .tag.m1-tag {
+      background: #ede9fe;
+      color: #6d28d9;
+      border-color: #ddd6fe;
+    }
+
+    /* Controls Bar */
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .btn {
+      border: 1px solid var(--border);
+      background: var(--panel-alt);
+      color: var(--text);
+      padding: 6px 11px;
+      border-radius: 8px;
+      font-size: 0.77rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .btn:hover { border-color: var(--primary); }
+    .btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .btn.primary:hover { background: var(--primary-hover); }
+    .btn.amber { background: var(--amber); border-color: var(--amber); color: #fff; }
+    .btn.accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn.rose { background: rgba(244, 63, 94, 0.16); border-color: var(--rose); color: var(--rose); }
+    .btn.active-toggle {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .sliders-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .slider-box {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      padding: 7px 10px;
+      border-radius: 8px;
+    }
+    .slider-lbl {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.74rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--muted);
+    }
+    .slider-lbl span:last-child { color: var(--text); font-weight: 700; }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* Chart Canvas */
+    .chart-wrap {
+      position: relative;
+      width: 100%;
+      height: 255px;
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    canvas#distChart {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .legend-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+      font-size: 0.73rem;
+      color: var(--muted);
+      align-items: center;
+    }
+    .leg-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      display: inline-block;
+    }
+
+    /* Stats Strip */
+    .stats-strip {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+      gap: 8px;
+      margin-top: 9px;
+    }
+    .stat-cell {
+      background: var(--panel-alt);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 7px 9px;
+    }
+    .stat-k { font-size: 0.68rem; color: var(--muted); font-weight: 600; }
+    .stat-v { font-size: 0.92rem; font-weight: 800; margin-top: 2px; font-variant-numeric: tabular-nums; }
+
+    /* Curriculum Specific Sections */
+    .curr-section { display: none; flex-direction: column; gap: 12px; }
+    .curr-section.active { display: flex; }
+
+    .note-text {
+      font-size: 0.79rem;
+      color: var(--muted);
+      line-height: 1.48;
+      margin-bottom: 8px;
+    }
+
+    .emp-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.76rem;
+      margin-top: 6px;
+    }
+    .emp-table th, .emp-table td {
+      padding: 6px 8px;
+      border-bottom: 1px solid var(--border);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .emp-table th:first-child, .emp-table td:first-child { text-align: left; }
+    .emp-table th { color: var(--muted); font-weight: 700; background: var(--panel-alt); }
+    .emp-table tr.active-band {
+      background: rgba(14, 165, 233, 0.13);
+      font-weight: 700;
+    }
+
+    .formula-box {
+      background: var(--panel-alt);
+      border-left: 4px solid var(--violet);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 0.79rem;
+      line-height: 1.56;
+      margin-top: 8px;
+    }
+    .validity-pill {
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+    }
+    .validity-pill.ok {
+      background: rgba(16, 185, 129, 0.18);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+    body.projector-light .validity-pill.ok {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .validity-pill.warn {
+      background: rgba(245, 158, 11, 0.2);
+      color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.45);
+    }
+    body.projector-light .validity-pill.warn {
+      background: #fef3c7;
+      color: #92400e;
+    }
+
+    @media (max-width: 960px) {
+      body { height: auto; overflow-y: auto; }
+      .workspace { grid-template-columns: 1fr; overflow: visible; }
+      .stage-pane { height: 440px; border-right: none; border-bottom: 1px solid var(--border); }
+      .analysis-pane { overflow-y: visible; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation & HKDSE Mode Switcher -->
+  <header>
+    <div class="brand">
+      <span class="brand-icon">N</span>
+      <span>3D Galton Board &mdash; Normal Distribution Studio</span>
+    </div>
+
+    <div class="mode-switch" role="tablist" aria-label="HKDSE Curriculum Mode">
+      <button class="mode-btn active" data-mode="core" onclick="setCurriculumMode('core')">
+        HKDSE Core: Overview &amp; Empirical Rule
+      </button>
+      <button class="mode-btn" data-mode="m1" onclick="setCurriculumMode('m1')">
+        HKDSE M1: Binomial &rarr; Normal &amp; C.C.
+      </button>
+    </div>
+
+    <div class="top-actions">
+      <button class="pill-btn" id="themeBtn" onclick="toggleProjectorTheme()">Projector Light Mode</button>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <!-- ================= LEFT PANE: 3D INCLINED GALTON BOARD ================= -->
+    <section class="stage-pane" id="stagePane">
+      <div class="canvas-3d-host" id="galton3dHost"></div>
+
+      <!-- Top-Left Live Physics & Path Telemetry -->
+      <div class="hud-tl">
+        <div class="hud-box">
+          <div>Total Dropped: <strong id="hudTotal">0</strong> &nbsp;|&nbsp; Rolling Now: <strong id="hudActive">0</strong></div>
+          <div id="hudParamsLine">Board Rows n = <strong>12</strong> &nbsp;|&nbsp; Mean &mu; = <strong>6.00</strong>, SD &sigma; = <strong>1.73</strong></div>
+        </div>
+        <div class="hud-box" id="hudTraceBox">
+          Click <strong>Trace 1 Ball</strong> to highlight a single rolling path down the inclined pegs.
+        </div>
+      </div>
+
+      <!-- Top-Right 3D Camera Presets -->
+      <div class="hud-tr">
+        <button class="cam-chip active" id="camSlope" onclick="setCameraPreset('slope')">3D Slope</button>
+        <button class="cam-chip" id="camFront" onclick="setCameraPreset('front')">Front View</button>
+        <button class="cam-chip" id="camSide" onclick="setCameraPreset('side')">Side Ramp</button>
+        <button class="cam-chip" id="camZoom" onclick="setCameraPreset('zoom')">Peg Zoom</button>
+      </div>
+
+      <!-- Bottom Bar -->
+      <div class="hud-bottom">
+        <div class="hud-bottom-left">
+          <button class="cam-chip active" id="glassBtn" onclick="toggleAcrylicCover()">Acrylic Cover: ON</button>
+          <button class="cam-chip" id="tiltBtn" onclick="cycleBoardTilt()">Board Slope: 24&deg;</button>
+        </div>
+        <span id="engineStatus">Three.js WebGL 3D Rolling Physics &bull; Drag to orbit, scroll to zoom</span>
+      </div>
+    </section>
+
+    <!-- ================= RIGHT PANE: CONTROLS, LIVE DISTRIBUTION & CURRICULUM ================= -->
+    <main class="analysis-pane">
+
+      <!-- 1. Simulation Controls Card -->
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span>Ball Drop &amp; Board Parameters</span>
+            <span class="tag" id="modeBadge">Core Mode (Symmetric p = 0.5)</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="streamBtn" onclick="toggleStream()">Start Stream</button>
+            <button class="btn amber" onclick="dropSingleBall(true)" title="Drop 1 gold-striped tracer ball slowly and record its path">Trace 1 Ball</button>
+            <button class="btn" onclick="dropSingleBall(false)">+1 Ball</button>
+            <button class="btn accent" onclick="instantBurst(100)">+100 Instant</button>
+            <button class="btn accent" onclick="instantBurst(1000)">+1,000 Instant</button>
+            <button class="btn rose" onclick="resetBoard()">Reset</button>
+          </div>
+        </div>
+
+        <div class="sliders-grid">
+          <div class="slider-box">
+            <div class="slider-lbl">
+              <span id="lblRowsTitle">Peg Rows (Controls Spread &sigma;)</span>
+              <span id="lblRowsVal">12 rows</span>
+            </div>
+            <input type="range" id="rngRows" min="6" max="16" step="2" value="12" oninput="onRowsChange(this.value)" />
+          </div>
+
+          <div class="slider-box" id="probSliderWrap" style="display:none;">
+            <div class="slider-lbl">
+              <span>Right-Bounce Prob (p)</span>
+              <span id="lblProbVal">0.50</span>
+            </div>
+            <input type="range" id="rngProb" min="0.10" max="0.90" step="0.05" value="0.50" oninput="onProbChange(this.value)" />
+          </div>
+
+          <div class="slider-box">
+            <div class="slider-lbl">
+              <span>Stream Rate &amp; Roll Speed</span>
+              <span id="lblSpeedVal">Normal</span>
+            </div>
+            <input type="range" id="rngSpeed" min="1" max="3" step="1" value="2" oninput="onSpeedChange(this.value)" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Synchronized Histogram & Normal Curve Card -->
+      <section class="card">
+        <div class="card-head">
+          <div class="card-title">
+            <span>Live Collector Distribution vs. Theoretical Bell Curve</span>
+          </div>
+          <div class="legend-row" style="margin-top:0;">
+            <label class="leg-item">
+              <input type="checkbox" id="chkNormal" checked onchange="drawDistChart()" />
+              <span class="swatch" style="background:#38bdf8;"></span> Normal Curve
+            </label>
+            <label class="leg-item" id="lblChkBinom" style="display:none;">
+              <input type="checkbox" id="chkBinom" checked onchange="drawDistChart()" />
+              <span class="swatch" style="background:#fbbf24; border-radius:50%;"></span> Binomial B(n, p)
+            </label>
+            <label class="leg-item">
+              <input type="checkbox" id="chkSigmaBands" checked onchange="drawDistChart()" />
+              <span class="swatch" style="background:rgba(16,185,129,0.5);"></span> &mu; &plusmn; k&sigma; Bands
+            </label>
+          </div>
+        </div>
+
+        <div class="chart-wrap">
+          <canvas id="distChart"></canvas>
+        </div>
+
+        <div class="stats-strip">
+          <div class="stat-cell">
+            <div class="stat-k">Sample Size (N)</div>
+            <div class="stat-v" id="stCount">0</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-k">Sample Mean (x&#772;) vs &mu;</div>
+            <div class="stat-v" id="stMean">&mdash; / 6.00</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-k">Sample SD (s) vs &sigma;</div>
+            <div class="stat-v" id="stSD">&mdash; / 1.73</div>
+          </div>
+          <div class="stat-cell">
+            <div class="stat-k" id="stExtraLabel">Bell Peak Center</div>
+            <div class="stat-v" id="stExtraVal">x = 6.00</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= 3A. HKDSE CORE MATH SECTION ================= -->
+      <div class="curr-section active" id="coreSection">
+
+        <!-- Empirical Rule 68-95-99.7 Explorer -->
+        <section class="card">
+          <div class="card-head">
+            <div class="card-title">
+              <span>Empirical Rule Explorer (68% &ndash; 95% &ndash; 99.7%)</span>
+              <span class="tag">HKDSE Core Focus</span>
+            </div>
+            <div class="btn-row">
+              <button class="btn active-toggle" data-band="all" onclick="setCoreBand('all', this)">All Bands</button>
+              <button class="btn" data-band="1" onclick="setCoreBand(1, this)">&mu; &plusmn; 1&sigma; (68%)</button>
+              <button class="btn" data-band="2" onclick="setCoreBand(2, this)">&mu; &plusmn; 2&sigma; (95%)</button>
+              <button class="btn" data-band="3" onclick="setCoreBand(3, this)">&mu; &plusmn; 3&sigma; (99.7%)</button>
+            </div>
+          </div>
+
+          <p class="note-text">
+            Each ball makes independent random left/right bounces down the pegs. Most paths cancel out near the center <strong>mean (&mu;)</strong>, while extreme paths are rare &mdash; creating a symmetric bell-shaped <strong>Normal Distribution</strong>. Click <strong>+1,000 Instant</strong> to verify how closely the collected balls match the <strong>68&ndash;95&ndash;99.7% Empirical Rule</strong>:
+          </p>
+
+          <table class="emp-table">
+            <thead>
+              <tr>
+                <th>Interval Around Mean</th>
+                <th>Value Range on Board</th>
+                <th>Balls in Interval</th>
+                <th>Observed Sample %</th>
+                <th>Empirical Rule Target</th>
+              </tr>
+            </thead>
+            <tbody id="coreEmpBody"></tbody>
+          </table>
+        </section>
+
+        <!-- Core Standard Score (z-score) & Bell Curve Overview -->
+        <section class="card">
+          <div class="card-head">
+            <div class="card-title">
+              <span>Standard Score (z-Score) Spotter &amp; Curve Concepts</span>
+              <span class="tag">z = (x &minus; &mu;) / &sigma;</span>
+            </div>
+          </div>
+          <p class="note-text">
+            Slide to inspect any collector bin <strong>x</strong> on the board and see how many standard deviations (&sigma;) it lies above or below the mean (&mu;):
+          </p>
+          <div class="slider-box">
+            <div class="slider-lbl">
+              <span>Inspect Collector Bin (x)</span>
+              <span id="lblCoreBinX">Bin x = 8</span>
+            </div>
+            <input type="range" id="rngCoreX" min="0" max="12" step="1" value="8" oninput="updateCoreZSpotter()" />
+          </div>
+          <div class="formula-box" id="coreZReadout" style="border-left-color: var(--primary);"></div>
+        </section>
+      </div>
+
+      <!-- ================= 3B. HKDSE M1 SECTION ================= -->
+      <div class="curr-section" id="m1Section">
+
+        <!-- M1 Binomial to Normal & Continuity Correction Card -->
+        <section class="card">
+          <div class="card-head">
+            <div class="card-title">
+              <span>Binomial &rarr; Normal Approximation &amp; Continuity Correction</span>
+              <span class="tag m1-tag">HKDSE M1</span>
+            </div>
+            <span class="validity-pill ok" id="m1ValidityPill">np = 6.0 &gt; 5, n(1&minus;p) = 6.0 &gt; 5 (Valid)</span>
+          </div>
+
+          <p class="note-text">
+            With <em>n</em> peg rows and right-bounce probability <em>p</em>, bin position follows <strong>X ~ B(n, p)</strong> with <strong>&mu; = np</strong> and <strong>&sigma;&sup2; = np(1 &minus; p)</strong>. When approximating discrete bars <strong>a &le; X &le; b</strong> by continuous <strong>Y ~ N(np, np(1 &minus; p))</strong>, each integer bar spans width 1 (from <em>k &minus; 0.5</em> to <em>k + 0.5</em>), requiring <strong>Continuity Correction</strong>:
+          </p>
+
+          <div class="sliders-grid" style="margin-top:6px;">
+            <div class="slider-box">
+              <div class="slider-lbl">
+                <span>Lower Discrete Bound (a)</span>
+                <span id="lblBoundA">a = 4</span>
+              </div>
+              <input type="range" id="rngBoundA" min="0" max="12" step="1" value="4" oninput="onM1BoundsChange('a')" />
+            </div>
+            <div class="slider-box">
+              <div class="slider-lbl">
+                <span>Upper Discrete Bound (b)</span>
+                <span id="lblBoundB">b = 8</span>
+              </div>
+              <input type="range" id="rngBoundB" min="0" max="12" step="1" value="8" oninput="onM1BoundsChange('b')" />
+            </div>
+          </div>
+
+          <div class="formula-box" id="m1StepsBox"></div>
+
+          <table class="emp-table" style="margin-top:10px;">
+            <thead>
+              <tr>
+                <th>Probability Method for P(a &le; X &le; b)</th>
+                <th>Interval / Formula</th>
+                <th>Value</th>
+                <th>Abs. Error vs Exact</th>
+              </tr>
+            </thead>
+            <tbody id="m1CompareBody"></tbody>
+          </table>
+        </section>
+
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    /* =========================================================================
+       1. MATHEMATICAL HELPERS (BINOMIAL PMF, NORMAL PDF, ERF / PHI)
+       ========================================================================= */
+    function nCr(n, r) {
+      if (r < 0 || r > n) return 0;
+      if (r === 0 || r === n) return 1;
+      r = Math.min(r, n - r);
+      let res = 1;
+      for (let i = 1; i <= r; i++) {
+        res = (res * (n - r + i)) / i;
+      }
+      return Math.round(res);
+    }
+
+    function binomPMF(n, p, k) {
+      if (k < 0 || k > n) return 0;
+      if (p <= 0) return k === 0 ? 1 : 0;
+      if (p >= 1) return k === n ? 1 : 0;
+      return nCr(n, k) * Math.pow(p, k) * Math.pow(1 - p, n - k);
+    }
+
+    function normalPDF(x, mu, sigma) {
+      if (sigma <= 1e-9) return 0;
+      const z = (x - mu) / sigma;
+      return Math.exp(-0.5 * z * z) / (sigma * Math.sqrt(2 * Math.PI));
+    }
+
+    // Abramowitz & Stegun 7.1.26 standard normal CDF Phi(z) (max error < 1.5e-7)
+    function normalCDF(z) {
+      if (z < -8.5) return 0;
+      if (z > 8.5) return 1;
+      const sign = z < 0 ? -1 : 1;
+      const x = Math.abs(z) / Math.sqrt(2);
+      const t = 1 / (1 + 0.3275911 * x);
+      const a1 = 0.254829592, a2 = -0.284496736, a3 = 1.421413741;
+      const a4 = -1.453152027, a5 = 1.061405429;
+      const erf = 1 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) * Math.exp(-x * x);
+      return 0.5 * (1 + sign * erf);
+    }
+
+    /* =========================================================================
+       2. SIMULATOR STATE
+       ========================================================================= */
+    const sim = {
+      mode: 'core',           // 'core' | 'm1'
+      rows: 12,               // peg rows n (even 6..16)
+      p: 0.50,                // right-bounce probability
+      speedLevel: 2,          // 1 = Slow, 2 = Normal, 3 = Fast
+      streaming: false,
+      streamCooldown: 0,
+      bins: new Array(13).fill(0),
+      totalCount: 0,
+      sumX: 0,
+      sumX2: 0,
+      coreBand: 'all',        // 'all' | 1 | 2 | 3
+      coreSpotX: 8,
+      m1A: 4,
+      m1B: 8,
+      lastTraceDecisions: null,
+      lastTraceBin: null,
+      lightTheme: false
+    };
+
+    function getMoments() {
+      const mu = sim.rows * sim.p;
+      const variance = sim.rows * sim.p * (1 - sim.p);
+      const sigma = Math.sqrt(variance);
+      return { mu, variance, sigma };
+    }
+
+    /* =========================================================================
+       3. 3D INCLINED GALTON BOARD ENGINE (THREE.JS + OFFLINE 3D FALLBACK)
+          Distills equirectangular striped sphere textures, quaternion rolling
+          physics along an inclined plane, and smooth spherical orbit controls.
+       ========================================================================= */
+    const board3D = {
+      useWebGL: typeof window.THREE !== 'undefined',
+      host: null,
+      renderer: null,
+      scene: null,
+      camera: null,
+      boardGroup: null,
+      dynamicGroup: null,
+      traceGroup: null,
+      coverMesh: null,
+      fallbackCanvas: null,
+      fallbackCtx: null,
+
+      tiltDeg: 24,
+      showCover: true,
+      rowDy: 0.52,
+      colDx: 0.56,
+      topPegY: 3.1,
+      binFloorY: -4.2,
+      ballRadius: 0.16,
+      surfaceZ: 0.16,
+
+      pegMeshes: [],          // [row][col]
+      pegFlashes: [],         // { mesh, timer, isTrace }
+      activeBalls: [],        // rolling balls currently on board
+      settledStacks: [],      // [binIdx] -> array of 3D ball meshes in channel
+      maxVisualPerBin: 16,
+
+      texRegular: null,
+      texTracer: null,
+
+      cam: {
+        theta: -0.46,
+        phi: 1.24,
+        radius: 12.8,
+        lookY: -0.25,
+        targetTheta: -0.46,
+        targetPhi: 1.24,
+        targetRadius: 12.8,
+        targetLookY: -0.25,
+        dragging: false,
+        lastX: 0,
+        lastY: 0
+      }
+    };
+
+    /* Procedural equirectangular rolling-stripe sphere texture:
+       Orthogonal great-circle bands + polar cap make 3D spin & rolling clearly visible! */
+    function createStripedBallCanvas(baseHex, stripeHex, accentHex) {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 128;
+      const ctx = c.getContext('2d');
+
+      ctx.fillStyle = baseHex;
+      ctx.fillRect(0, 0, 256, 128);
+
+      // Subtle latitude shading
+      const grad = ctx.createLinearGradient(0, 0, 0, 128);
+      grad.addColorStop(0, 'rgba(255,255,255,0.28)');
+      grad.addColorStop(0.5, 'rgba(255,255,255,0.0)');
+      grad.addColorStop(1, 'rgba(0,0,0,0.30)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 128);
+
+      // Equatorial rolling band
+      ctx.fillStyle = stripeHex;
+      ctx.fillRect(0, 55, 256, 18);
+      ctx.fillStyle = accentHex;
+      ctx.fillRect(0, 61, 256, 6);
+
+      // Two orthogonal meridian bands (at u=0.25/0.75 and u=0/0.5) so spin around ANY axis shows clearly
+      [32, 96, 160, 224].forEach((x, idx) => {
+        ctx.fillStyle = idx % 2 === 0 ? stripeHex : 'rgba(255,255,255,0.55)';
+        ctx.fillRect(x - 6, 0, 12, 128);
+      });
+
+      // Polar caps
+      ctx.fillStyle = accentHex;
+      ctx.fillRect(0, 0, 256, 12);
+      ctx.fillRect(0, 116, 256, 12);
+
+      return c;
+    }
+
+    function init3DBoard() {
+      board3D.host = document.getElementById('galton3dHost');
+      const rect = board3D.host.getBoundingClientRect();
+      const w = rect.width || 520;
+      const h = rect.height || 560;
+
+      if (board3D.useWebGL) {
+        try {
+          const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+          renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+          renderer.setSize(w, h);
+          board3D.host.innerHTML = '';
+          board3D.host.appendChild(renderer.domElement);
+          board3D.renderer = renderer;
+
+          const scene = new THREE.Scene();
+          board3D.scene = scene;
+
+          const camera = new THREE.PerspectiveCamera(40, w / h, 0.1, 100);
+          board3D.camera = camera;
+          syncCameraTransform(true);
+
+          // Studio Lighting
+          scene.add(new THREE.HemisphereLight(0xf8fafc, 0x1e293b, 0.92));
+
+          const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
+          dirLight.position.set(5, 10, 12);
+          scene.add(dirLight);
+
+          const warmRim = new THREE.PointLight(0xfbbf24, 0.45, 28);
+          warmRim.position.set(-7, 4, 6);
+          scene.add(warmRim);
+
+          board3D.texRegular = new THREE.CanvasTexture(
+            createStripedBallCanvas('#0284c7', '#f8fafc', '#38bdf8')
+          );
+          board3D.texRegular.anisotropy = 4;
+
+          board3D.texTracer = new THREE.CanvasTexture(
+            createStripedBallCanvas('#f59e0b', '#ffffff', '#ef4444')
+          );
+          board3D.texTracer.anisotropy = 4;
+
+          board3D.boardGroup = new THREE.Group();
+          board3D.dynamicGroup = new THREE.Group();
+          board3D.traceGroup = new THREE.Group();
+          board3D.boardGroup.add(board3D.dynamicGroup);
+          board3D.boardGroup.add(board3D.traceGroup);
+          scene.add(board3D.boardGroup);
+
+          rebuildBoardGeometry();
+        } catch (e) {
+          board3D.useWebGL = false;
+        }
+      }
+
+      if (!board3D.useWebGL) {
+        const c = document.createElement('canvas');
+        board3D.host.innerHTML = '';
+        board3D.host.appendChild(c);
+        board3D.fallbackCanvas = c;
+        board3D.fallbackCtx = c.getContext('2d');
+        document.getElementById('engineStatus').textContent = 'Offline 3D Perspective Engine • Drag to orbit, scroll to zoom';
+        rebuildBoardGeometry();
+        onResizeAll();
+      }
+
+      bindOrbitInteraction();
+      window.addEventListener('resize', onResizeAll);
+      requestAnimationFrame(mainLoop);
+    }
+
+    function computeBoardMetrics() {
+      const n = sim.rows;
+      const totalSpanY = 4.6;
+      board3D.rowDy = totalSpanY / n;
+      board3D.colDx = board3D.rowDy * 1.12;
+      board3D.topPegY = 2.85;
+      board3D.binFloorY = -4.15;
+      board3D.ballRadius = Math.max(0.105, Math.min(0.175, board3D.colDx * 0.29));
+      board3D.surfaceZ = 0.14;
+      board3D.maxVisualPerBin = Math.max(10, Math.floor((2.15) / (board3D.ballRadius * 2.02)));
+    }
+
+    function pegLocalXY(r, j) {
+      return {
+        x: (j - r * 0.5) * board3D.colDx,
+        y: board3D.topPegY - r * board3D.rowDy
+      };
+    }
+
+    function binCenterX(k) {
+      return (k - sim.rows * 0.5) * board3D.colDx;
+    }
+
+    function rebuildBoardGeometry() {
+      computeBoardMetrics();
+      const n = sim.rows;
+      board3D.activeBalls = [];
+      board3D.pegFlashes = [];
+      board3D.settledStacks = Array.from({ length: n + 1 }, () => []);
+
+      if (!board3D.useWebGL || !board3D.boardGroup) return;
+
+      // Remove previous static board meshes (keep dynamicGroup & traceGroup)
+      const toRemove = [];
+      board3D.boardGroup.children.forEach(ch => {
+        if (ch !== board3D.dynamicGroup && ch !== board3D.traceGroup) toRemove.push(ch);
+      });
+      toRemove.forEach(ch => board3D.boardGroup.remove(ch));
+
+      while (board3D.dynamicGroup.children.length) {
+        board3D.dynamicGroup.remove(board3D.dynamicGroup.children[0]);
+      }
+      while (board3D.traceGroup.children.length) {
+        board3D.traceGroup.remove(board3D.traceGroup.children[0]);
+      }
+
+      board3D.boardGroup.rotation.x = -(board3D.tiltDeg * Math.PI) / 180;
+
+      const boardW = (n + 2.6) * board3D.colDx;
+      const boardH = 9.0;
+      const centerBoardY = -0.55;
+
+      // 1. Inclined Slate/Walnut Backplate
+      const backMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        roughness: 0.62,
+        metalness: 0.18
+      });
+      const backMesh = new THREE.Mesh(new THREE.BoxGeometry(boardW, boardH, 0.28), backMat);
+      backMesh.position.set(0, centerBoardY, 0);
+      board3D.boardGroup.add(backMesh);
+
+      // Subtle warm wood/brass outer frame rails
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: 0xb45309,
+        roughness: 0.38,
+        metalness: 0.45
+      });
+      const sideThickness = 0.22;
+      const sideDepth = board3D.ballRadius * 2.6 + 0.34;
+      [-boardW / 2 - sideThickness / 2, boardW / 2 + sideThickness / 2].forEach(sx => {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(sideThickness, boardH + 0.2, sideDepth), frameMat);
+        rail.position.set(sx, centerBoardY, sideDepth / 2 - 0.14);
+        board3D.boardGroup.add(rail);
+      });
+      const bottomLedge = new THREE.Mesh(
+        new THREE.BoxGeometry(boardW + sideThickness * 2, 0.26, sideDepth),
+        frameMat
+      );
+      bottomLedge.position.set(0, board3D.binFloorY - 0.13, sideDepth / 2 - 0.14);
+      board3D.boardGroup.add(bottomLedge);
+
+      // 2. Top Funnel Hopper Guides
+      const funnelMat = new THREE.MeshStandardMaterial({
+        color: 0x64748b,
+        metalness: 0.65,
+        roughness: 0.28
+      });
+      const neckGap = board3D.ballRadius * 2.55;
+      [-1, 1].forEach(dir => {
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(boardW * 0.34, 0.13, board3D.ballRadius * 2.3), funnelMat);
+        arm.position.set(dir * (neckGap + boardW * 0.155), board3D.topPegY + 0.78, board3D.surfaceZ + board3D.ballRadius);
+        arm.rotation.z = dir * 0.28;
+        board3D.boardGroup.add(arm);
+      });
+
+      // 3. Protruding Cylindrical Brass Pegs
+      const pegRadius = Math.max(0.042, board3D.ballRadius * 0.36);
+      const pegHeight = board3D.ballRadius * 2.35;
+      const pegGeo = new THREE.CylinderGeometry(pegRadius, pegRadius, pegHeight, 16);
+      pegGeo.rotateX(Math.PI / 2); // Point cylinder along +Z out of inclined board
+
+      board3D.pegMeshes = [];
+      for (let r = 0; r < n; r++) {
+        const rowArr = [];
+        for (let j = 0; j <= r; j++) {
+          const pos = pegLocalXY(r, j);
+          const pegMat = new THREE.MeshStandardMaterial({
+            color: 0xeab308,
+            metalness: 0.78,
+            roughness: 0.22
+          });
+          const peg = new THREE.Mesh(pegGeo, pegMat);
+          peg.position.set(pos.x, pos.y, board3D.surfaceZ + pegHeight * 0.45);
+          board3D.boardGroup.add(peg);
+          rowArr.push(peg);
+        }
+        board3D.pegMeshes.push(rowArr);
+      }
+
+      // 4. Bottom Collector Channel Dividers
+      const lastPegY = board3D.topPegY - (n - 1) * board3D.rowDy;
+      const channelTopY = lastPegY - board3D.rowDy * 0.72;
+      const channelH = Math.max(1.2, channelTopY - board3D.binFloorY);
+      const dividerGeo = new THREE.BoxGeometry(0.05, channelH, board3D.ballRadius * 2.35);
+      const dividerMat = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        metalness: 0.55,
+        roughness: 0.3,
+        transparent: true,
+        opacity: 0.85
+      });
+
+      for (let k = 0; k <= n + 1; k++) {
+        const dx = (k - 0.5 - n * 0.5) * board3D.colDx;
+        const div = new THREE.Mesh(dividerGeo, dividerMat);
+        div.position.set(dx, board3D.binFloorY + channelH / 2, board3D.surfaceZ + board3D.ballRadius * 1.05);
+        board3D.boardGroup.add(div);
+      }
+
+      // 5. Front Clear Acrylic Cover Sheet
+      const coverGeo = new THREE.PlaneGeometry(boardW, boardH);
+      const coverMat = new THREE.MeshPhongMaterial({
+        color: 0xbae6fd,
+        specular: 0xffffff,
+        shininess: 110,
+        transparent: true,
+        opacity: 0.12,
+        depthWrite: false
+      });
+      board3D.coverMesh = new THREE.Mesh(coverGeo, coverMat);
+      board3D.coverMesh.position.set(0, centerBoardY, board3D.surfaceZ + board3D.ballRadius * 2.45);
+      board3D.coverMesh.visible = board3D.showCover;
+      board3D.boardGroup.add(board3D.coverMesh);
+    }
+
+    /* Spawn a 3D rolling sphere with pre-sampled Bernoulli decisions */
+    function dropSingleBall(isTracer) {
+      const n = sim.rows;
+      const decisions = [];
+      let rights = 0;
+      for (let r = 0; r < n; r++) {
+        const goRight = Math.random() < sim.p ? 1 : 0;
+        decisions.push(goRight);
+        rights += goRight;
+      }
+
+      // Build waypoints in local inclined-board coordinates
+      const waypoints = [];
+      waypoints.push({ x: 0, y: board3D.topPegY + 0.92, type: 'entry' });
+      let cumRight = 0;
+      for (let r = 0; r < n; r++) {
+        const pos = pegLocalXY(r, cumRight);
+        waypoints.push({
+          x: pos.x,
+          y: pos.y + board3D.ballRadius * 0.95,
+          row: r,
+          col: cumRight,
+          dir: decisions[r],
+          type: 'peg'
+        });
+        cumRight += decisions[r];
+      }
+
+      const finalX = binCenterX(rights);
+      const lastPegY = board3D.topPegY - (n - 1) * board3D.rowDy;
+      const channelTopY = lastPegY - board3D.rowDy * 0.78;
+      waypoints.push({ x: finalX, y: channelTopY, type: 'channelTop' });
+
+      if (isTracer) {
+        clearTraceVisuals();
+        sim.lastTraceDecisions = decisions;
+        sim.lastTraceBin = rights;
+        const seqStr = decisions.map(d => (d ? 'R' : 'L')).join('-');
+        document.getElementById('hudTraceBox').innerHTML =
+          '<span class="amber">Tracing Ball:</span> ' + seqStr +
+          ' &rarr; <strong>Bin ' + rights + '</strong> (' + rights + ' Right of ' + n + ')';
+      }
+
+      let mesh = null;
+      const zCenter = board3D.surfaceZ + board3D.ballRadius * 1.05;
+      if (board3D.useWebGL && board3D.dynamicGroup) {
+        const geo = new THREE.SphereGeometry(board3D.ballRadius, 24, 18);
+        const mat = new THREE.MeshStandardMaterial({
+          map: isTracer ? board3D.texTracer : board3D.texRegular,
+          roughness: 0.22,
+          metalness: 0.14,
+          emissive: isTracer ? new THREE.Color(0x78350f) : new THREE.Color(0x000000),
+          emissiveIntensity: isTracer ? 0.35 : 0
+        });
+        mesh = new THREE.Mesh(geo, mat);
+        mesh.position.set(0, waypoints[0].y, zCenter);
+        board3D.dynamicGroup.add(mesh);
+      }
+
+      board3D.activeBalls.push({
+        isTracer: !!isTracer,
+        decisions,
+        finalBin: rights,
+        waypoints,
+        segIdx: 0,
+        segT: 0,
+        x: 0,
+        y: waypoints[0].y,
+        z: zCenter,
+        rotAngleX: 0,
+        rotAngleY: 0,
+        tracePts: isTracer ? [new THREE.Vector3(0, waypoints[0].y, zCenter + 0.04)] : null,
+        mesh
+      });
+
+      document.getElementById('hudActive').textContent = board3D.activeBalls.length;
+    }
+
+    function clearTraceVisuals() {
+      if (board3D.useWebGL && board3D.traceGroup) {
+        while (board3D.traceGroup.children.length) {
+          board3D.traceGroup.remove(board3D.traceGroup.children[0]);
+        }
+      }
+      // Reset peg colors
+      board3D.pegMeshes.forEach(row => {
+        row.forEach(peg => {
+          peg.material.color.setHex(0xeab308);
+          peg.material.emissive.setHex(0x000000);
+        });
+      });
+    }
+
+    function highlightPegHit(r, j, isTracer) {
+      if (!board3D.useWebGL) return;
+      const row = board3D.pegMeshes[r];
+      if (!row || !row[j]) return;
+      const peg = row[j];
+      if (isTracer) {
+        peg.material.color.setHex(0xfef08a);
+        peg.material.emissive.setHex(0xd97706);
+        peg.material.emissiveIntensity = 0.65;
+      } else {
+        peg.material.color.setHex(0x7dd3fc);
+        board3D.pegFlashes.push({ peg, timer: 0.14 });
+      }
+    }
+
+    function addSettledBallVisual(binIdx, isTracer) {
+      const stack = board3D.settledStacks[binIdx];
+      if (!stack || stack.length >= board3D.maxVisualPerBin) return;
+      const targetY = board3D.binFloorY + board3D.ballRadius + stack.length * (board3D.ballRadius * 1.98);
+      const targetX = binCenterX(binIdx);
+      const zCenter = board3D.surfaceZ + board3D.ballRadius * 1.05;
+
+      if (board3D.useWebGL && board3D.dynamicGroup) {
+        const geo = new THREE.SphereGeometry(board3D.ballRadius, 20, 14);
+        const mat = new THREE.MeshStandardMaterial({
+          map: isTracer ? board3D.texTracer : board3D.texRegular,
+          roughness: 0.25,
+          metalness: 0.12
+        });
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(targetX, targetY, zCenter);
+        m.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+        board3D.dynamicGroup.add(m);
+        stack.push({ x: targetX, y: targetY, z: zCenter, isTracer, mesh: m });
+      } else {
+        stack.push({ x: targetX, y: targetY, z: zCenter, isTracer, mesh: null });
+      }
+    }
+
+    function recordBallInBin(binIdx, isTracer) {
+      sim.bins[binIdx]++;
+      sim.totalCount++;
+      sim.sumX += binIdx;
+      sim.sumX2 += binIdx * binIdx;
+      addSettledBallVisual(binIdx, isTracer);
+      refreshAllReadouts();
+    }
+
+    function instantBurst(count) {
+      const n = sim.rows;
+      const p = sim.p;
+      for (let c = 0; c < count; c++) {
+        let rights = 0;
+        for (let r = 0; r < n; r++) {
+          if (Math.random() < p) rights++;
+        }
+        sim.bins[rights]++;
+        sim.totalCount++;
+        sim.sumX += rights;
+        sim.sumX2 += rights * rights;
+      }
+
+      // Sync proportional 3D stacks in the collector channels so 3D board mirrors histogram!
+      syncProportional3DStacks();
+      refreshAllReadouts();
+    }
+
+    function syncProportional3DStacks() {
+      const maxCount = Math.max(1, ...sim.bins);
+      const n = sim.rows;
+      // Clear current settled visual meshes
+      for (let k = 0; k <= n; k++) {
+        const st = board3D.settledStacks[k] || [];
+        st.forEach(item => {
+          if (item.mesh && board3D.dynamicGroup) board3D.dynamicGroup.remove(item.mesh);
+        });
+        board3D.settledStacks[k] = [];
+        const targetBalls = sim.totalCount <= board3D.maxVisualPerBin * 2
+          ? Math.min(board3D.maxVisualPerBin, sim.bins[k])
+          : Math.round((sim.bins[k] / maxCount) * board3D.maxVisualPerBin);
+        for (let m = 0; m < targetBalls; m++) {
+          addSettledBallVisual(k, false);
+        }
+      }
+    }
+
+    function stepRollingPhysics(dt) {
+      // Stream spawner
+      if (sim.streaming) {
+        sim.streamCooldown -= dt;
+        const interval = sim.speedLevel === 3 ? 0.065 : (sim.speedLevel === 2 ? 0.15 : 0.34);
+        if (sim.streamCooldown <= 0 && board3D.activeBalls.length < 75) {
+          dropSingleBall(false);
+          sim.streamCooldown = interval;
+        }
+      }
+
+      // Update peg flash decay
+      for (let i = board3D.pegFlashes.length - 1; i >= 0; i--) {
+        const f = board3D.pegFlashes[i];
+        f.timer -= dt;
+        if (f.timer <= 0) {
+          if (f.peg.material.emissiveIntensity === 0) {
+            f.peg.material.color.setHex(0xeab308);
+          }
+          board3D.pegFlashes.splice(i, 1);
+        }
+      }
+
+      const baseSegRate = sim.speedLevel === 3 ? 8.2 : (sim.speedLevel === 2 ? 5.2 : 2.9);
+
+      for (let i = board3D.activeBalls.length - 1; i >= 0; i--) {
+        const b = board3D.activeBalls[i];
+        const rate = b.isTracer ? Math.min(3.3, baseSegRate * 0.72) : baseSegRate;
+        const prevX = b.x;
+        const prevY = b.y;
+
+        if (b.segIdx < b.waypoints.length - 1) {
+          b.segT += dt * rate;
+          while (b.segT >= 1 && b.segIdx < b.waypoints.length - 1) {
+            b.segT -= 1;
+            b.segIdx++;
+            const wpHit = b.waypoints[b.segIdx];
+            if (wpHit && wpHit.type === 'peg') {
+              highlightPegHit(wpHit.row, wpHit.col, b.isTracer);
+            }
+          }
+
+          if (b.segIdx < b.waypoints.length - 1) {
+            const p0 = b.waypoints[b.segIdx];
+            const p1 = b.waypoints[b.segIdx + 1];
+            const t = b.segT;
+
+            // Smooth horizontal S-arc + gravitational bounce arc off peg
+            const easeX = t * t * (3 - 2 * t);
+            b.x = p0.x + (p1.x - p0.x) * easeX;
+
+            const bounceLift = p0.type === 'peg' ? Math.sin(t * Math.PI) * (board3D.rowDy * 0.24) : 0;
+            const gravT = t * t * 0.65 + t * 0.35;
+            b.y = p0.y + (p1.y - p0.y) * gravT + bounceLift;
+            b.z = board3D.surfaceZ + board3D.ballRadius * 1.05 + (p0.type === 'peg' ? Math.sin(t * Math.PI) * 0.035 : 0);
+          }
+        } else {
+          // Final roll down collector channel to stack top
+          const stackLen = (board3D.settledStacks[b.finalBin] || []).length;
+          const stopY = board3D.binFloorY + board3D.ballRadius + stackLen * (board3D.ballRadius * 1.98);
+          b.x = binCenterX(b.finalBin);
+          b.y -= dt * (rate * 1.65);
+          if (b.y <= stopY) {
+            if (b.mesh && board3D.dynamicGroup) board3D.dynamicGroup.remove(b.mesh);
+            board3D.activeBalls.splice(i, 1);
+            recordBallInBin(b.finalBin, b.isTracer);
+            document.getElementById('hudActive').textContent = board3D.activeBalls.length;
+            continue;
+          }
+        }
+
+        // True no-slip 3D sphere rolling quaternion update on inclined board!
+        const dx = b.x - prevX;
+        const dy = b.y - prevY;
+        const dist = Math.hypot(dx, dy);
+        if (dist > 1e-5) {
+          const dTheta = dist / board3D.ballRadius;
+          b.rotAngleX += (-dy / dist) * dTheta;
+          b.rotAngleY += (dx / dist) * dTheta;
+          if (b.mesh && window.THREE) {
+            const axis = new THREE.Vector3(-dy / dist, dx / dist, 0).normalize();
+            const qStep = new THREE.Quaternion().setFromAxisAngle(axis, dTheta);
+            b.mesh.quaternion.premultiply(qStep);
+          }
+        }
+
+        if (b.mesh) {
+          b.mesh.position.set(b.x, b.y, b.z);
+        }
+
+        // Update glowing 3D path line for traced ball
+        if (b.isTracer && b.tracePts && board3D.useWebGL && board3D.traceGroup) {
+          b.tracePts.push(new THREE.Vector3(b.x, b.y, b.z + 0.05));
+          while (board3D.traceGroup.children.length) {
+            board3D.traceGroup.remove(board3D.traceGroup.children[0]);
+          }
+          const lineGeo = new THREE.BufferGeometry().setFromPoints(b.tracePts);
+          const lineMat = new THREE.LineBasicMaterial({ color: 0xfbbf24, linewidth: 2 });
+          board3D.traceGroup.add(new THREE.Line(lineGeo, lineMat));
+        }
+      }
+    }
+
+    /* Camera Orbit & Classroom Presets */
+    function syncCameraTransform(instant) {
+      const c = board3D.cam;
+      const k = instant ? 1.0 : 0.14;
+      c.theta += (c.targetTheta - c.theta) * k;
+      c.phi += (c.targetPhi - c.phi) * k;
+      c.radius += (c.targetRadius - c.radius) * k;
+      c.lookY += (c.targetLookY - c.lookY) * k;
+
+      if (board3D.useWebGL && board3D.camera) {
+        const sinP = Math.sin(c.phi);
+        board3D.camera.position.set(
+          c.radius * sinP * Math.sin(c.theta),
+          c.lookY + c.radius * Math.cos(c.phi),
+          c.radius * sinP * Math.cos(c.theta)
+        );
+        board3D.camera.lookAt(0, c.lookY, 0);
+      }
+    }
+
+    function setCameraPreset(name) {
+      document.querySelectorAll('.hud-tr .cam-chip').forEach(btn => btn.classList.remove('active'));
+      if (name === 'slope') {
+        board3D.cam.targetTheta = -0.46;
+        board3D.cam.targetPhi = 1.24;
+        board3D.cam.targetRadius = 12.8;
+        board3D.cam.targetLookY = -0.25;
+        document.getElementById('camSlope').classList.add('active');
+      } else if (name === 'front') {
+        board3D.cam.targetTheta = 0.0;
+        board3D.cam.targetPhi = 1.52;
+        board3D.cam.targetRadius = 12.6;
+        board3D.cam.targetLookY = -0.35;
+        document.getElementById('camFront').classList.add('active');
+      } else if (name === 'side') {
+        board3D.cam.targetTheta = -1.08;
+        board3D.cam.targetPhi = 1.34;
+        board3D.cam.targetRadius = 13.2;
+        board3D.cam.targetLookY = -0.20;
+        document.getElementById('camSide').classList.add('active');
+      } else if (name === 'zoom') {
+        board3D.cam.targetTheta = -0.32;
+        board3D.cam.targetPhi = 1.18;
+        board3D.cam.targetRadius = 7.4;
+        board3D.cam.targetLookY = 1.15;
+        document.getElementById('camZoom').classList.add('active');
+      }
+    }
+
+    function bindOrbitInteraction() {
+      const pane = document.getElementById('stagePane');
+      pane.addEventListener('pointerdown', e => {
+        if (e.target.closest('button')) return;
+        board3D.cam.dragging = true;
+        board3D.cam.lastX = e.clientX;
+        board3D.cam.lastY = e.clientY;
+        pane.setPointerCapture(e.pointerId);
+      });
+      pane.addEventListener('pointermove', e => {
+        if (!board3D.cam.dragging) return;
+        const dx = e.clientX - board3D.cam.lastX;
+        const dy = e.clientY - board3D.cam.lastY;
+        board3D.cam.lastX = e.clientX;
+        board3D.cam.lastY = e.clientY;
+        board3D.cam.targetTheta -= dx * 0.008;
+        board3D.cam.targetPhi = Math.max(0.35, Math.min(1.85, board3D.cam.targetPhi - dy * 0.007));
+      });
+      pane.addEventListener('pointerup', () => { board3D.cam.dragging = false; });
+      pane.addEventListener('pointercancel', () => { board3D.cam.dragging = false; });
+      pane.addEventListener('wheel', e => {
+        e.preventDefault();
+        board3D.cam.targetRadius = Math.max(6.2, Math.min(19.5, board3D.cam.targetRadius + e.deltaY * 0.01));
+      }, { passive: false });
+    }
+
+    function toggleAcrylicCover() {
+      board3D.showCover = !board3D.showCover;
+      if (board3D.coverMesh) board3D.coverMesh.visible = board3D.showCover;
+      const btn = document.getElementById('glassBtn');
+      btn.textContent = board3D.showCover ? 'Acrylic Cover: ON' : 'Acrylic Cover: Off';
+      btn.classList.toggle('active', board3D.showCover);
+    }
+
+    function cycleBoardTilt() {
+      const tilts = [16, 24, 34];
+      const idx = (tilts.indexOf(board3D.tiltDeg) + 1) % tilts.length;
+      board3D.tiltDeg = tilts[idx];
+      if (board3D.boardGroup) {
+        board3D.boardGroup.rotation.x = -(board3D.tiltDeg * Math.PI) / 180;
+      }
+      document.getElementById('tiltBtn').textContent = 'Board Slope: ' + board3D.tiltDeg + '°';
+    }
+
+    /* Offline 3D Perspective Canvas Fallback */
+    function renderFallbackBoard() {
+      const ctx = board3D.fallbackCtx;
+      const canvas = board3D.fallbackCanvas;
+      if (!ctx || !canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.width / dpr;
+      const h = canvas.height / dpr;
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, w, h);
+
+      const tiltRad = -(board3D.tiltDeg * Math.PI) / 180;
+      const cosA = Math.cos(tiltRad), sinA = Math.sin(tiltRad);
+      const c = board3D.cam;
+      const sinT = Math.sin(c.theta), cosT = Math.cos(c.theta);
+      const cosP = Math.cos(c.phi), sinP = Math.sin(c.phi);
+      const fov = h * 0.92;
+
+      function projectLocal(lx, ly, lz) {
+        // Apply board tilt around X
+        const wy = ly * cosA - lz * sinA;
+        const wz = ly * sinA + lz * cosA;
+        const wx = lx;
+
+        const y0 = wy - c.lookY;
+        const rx = wx * cosT - wz * sinT;
+        const rz1 = wx * sinT + wz * cosT;
+        const ry = y0 * sinP - rz1 * cosP;
+        const rz = y0 * cosP + rz1 * sinP + c.radius;
+        const s = fov / Math.max(1.5, rz);
+        return { sx: w / 2 + rx * s, sy: h / 2 - ry * s, scale: s };
+      }
+
+      // Draw pegs
+      ctx.fillStyle = '#eab308';
+      for (let r = 0; r < sim.rows; r++) {
+        for (let j = 0; j <= r; j++) {
+          const pos = pegLocalXY(r, j);
+          const p = projectLocal(pos.x, pos.y, 0.2);
+          ctx.beginPath();
+          ctx.arc(p.sx, p.sy, Math.max(2.2, 0.06 * p.scale), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Draw settled & active balls with visible rolling cross-stripe
+      const allBalls = [];
+      board3D.settledStacks.forEach(st => st.forEach(b => allBalls.push(b)));
+      board3D.activeBalls.forEach(b => allBalls.push(b));
+
+      allBalls.forEach(b => {
+        const p = projectLocal(b.x, b.y, b.z);
+        const rad = Math.max(3, board3D.ballRadius * p.scale);
+        ctx.beginPath();
+        ctx.arc(p.sx, p.sy, rad, 0, Math.PI * 2);
+        ctx.fillStyle = b.isTracer ? '#f59e0b' : '#0284c7';
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.4;
+        const ang = (b.rotAngleX || 0) + (b.rotAngleY || 0);
+        ctx.beginPath();
+        ctx.moveTo(p.sx - Math.cos(ang) * rad * 0.75, p.sy - Math.sin(ang) * rad * 0.75);
+        ctx.lineTo(p.sx + Math.cos(ang) * rad * 0.75, p.sy + Math.sin(ang) * rad * 0.75);
+        ctx.stroke();
+      });
+
+      ctx.restore();
+    }
+
+    let prevTime = performance.now();
+    function mainLoop(now) {
+      const dt = Math.min(0.04, (now - prevTime) / 1000);
+      prevTime = now;
+
+      syncCameraTransform(false);
+      stepRollingPhysics(dt);
+
+      if (board3D.useWebGL && board3D.renderer) {
+        board3D.renderer.render(board3D.scene, board3D.camera);
+      } else {
+        renderFallbackBoard();
+      }
+      requestAnimationFrame(mainLoop);
+    }
+
+    /* =========================================================================
+       4. 2D ANALYTICAL HISTOGRAM, NORMAL CURVE & CONTINUITY CORRECTION CHART
+       ========================================================================= */
+    function drawDistChart() {
+      const canvas = document.getElementById('distChart');
+      if (!canvas) return;
+      const rect = canvas.parentElement.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+
+      const dpr = window.devicePixelRatio || 1;
+      if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+        canvas.width = Math.round(rect.width * dpr);
+        canvas.height = Math.round(rect.height * dpr);
+      }
+
+      const ctx = canvas.getContext('2d');
+      const w = rect.width;
+      const h = rect.height;
+      ctx.save();
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      const padL = 44, padR = 18, padT = 18, padB = 34;
+      const plotW = w - padL - padR;
+      const plotH = h - padT - padB;
+      const n = sim.rows;
+      const { mu, sigma } = getMoments();
+
+      const xMin = -0.65;
+      const xMax = n + 0.65;
+      const xToPx = x => padL + ((x - xMin) / (xMax - xMin)) * plotW;
+
+      // Determine Y-axis max probability density / relative frequency
+      let maxProb = sigma > 0 ? normalPDF(mu, mu, sigma) * 1.18 : 0.4;
+      for (let k = 0; k <= n; k++) {
+        maxProb = Math.max(maxProb, binomPMF(n, sim.p, k) * 1.15);
+        if (sim.totalCount > 0) {
+          maxProb = Math.max(maxProb, (sim.bins[k] / sim.totalCount) * 1.15);
+        }
+      }
+      maxProb = Math.max(0.15, maxProb);
+      const yToPx = prob => padT + plotH - (prob / maxProb) * plotH;
+
+      const light = sim.lightTheme;
+      const axisColor = light ? '#94a3b8' : '#334155';
+      const labelColor = light ? '#334155' : '#94a3b8';
+
+      // 1. Empirical Rule Sigma Bands Shading
+      if (document.getElementById('chkSigmaBands').checked && sigma > 0) {
+        const bands = sim.mode === 'core' && sim.coreBand !== 'all'
+          ? [sim.coreBand]
+          : [3, 2, 1];
+        const alphas = { 1: 0.20, 2: 0.12, 3: 0.07 };
+        bands.forEach(kBand => {
+          const lx = Math.max(xMin, mu - kBand * sigma);
+          const rx = Math.min(xMax, mu + kBand * sigma);
+          ctx.fillStyle = 'rgba(16, 185, 129, ' + alphas[kBand] + ')';
+          ctx.fillRect(xToPx(lx), padT, xToPx(rx) - xToPx(lx), plotH);
+        });
+      }
+
+      // 2. Histogram Bars (Observed Relative Frequency)
+      for (let k = 0; k <= n; k++) {
+        const relFreq = sim.totalCount > 0 ? sim.bins[k] / sim.totalCount : 0;
+        const bx0 = xToPx(k - 0.46);
+        const bx1 = xToPx(k + 0.46);
+        const by = yToPx(relFreq);
+
+        const inM1Interval = sim.mode === 'm1' && k >= sim.m1A && k <= sim.m1B;
+        const isCoreSpot = sim.mode === 'core' && k === sim.coreSpotX;
+
+        if (isCoreSpot) {
+          ctx.fillStyle = 'rgba(245, 158, 11, 0.78)';
+        } else if (inM1Interval) {
+          ctx.fillStyle = 'rgba(139, 92, 246, 0.58)';
+        } else {
+          ctx.fillStyle = light ? 'rgba(2, 132, 199, 0.42)' : 'rgba(56, 189, 248, 0.36)';
+        }
+
+        if (relFreq > 0) {
+          ctx.fillRect(bx0, by, bx1 - bx0, padT + plotH - by);
+          ctx.strokeStyle = isCoreSpot ? '#f59e0b' : (inM1Interval ? '#a78bfa' : '#38bdf8');
+          ctx.lineWidth = 1.2;
+          ctx.strokeRect(bx0, by, bx1 - bx0, padT + plotH - by);
+        }
+      }
+
+      // 3. M1 Continuity-Corrected Shaded Area [a - 0.5, b + 0.5] under Normal Curve
+      if (sim.mode === 'm1' && sigma > 0 && document.getElementById('chkNormal').checked) {
+        const ccLow = sim.m1A - 0.5;
+        const ccHigh = sim.m1B + 0.5;
+
+        // Highlight the +/-0.5 Continuity Correction slivers in bright amber!
+        const drawCurveArea = (fromX, toX, fillCol) => {
+          const lo = Math.max(xMin, fromX);
+          const hi = Math.min(xMax, toX);
+          if (hi <= lo) return;
+          ctx.beginPath();
+          ctx.moveTo(xToPx(lo), padT + plotH);
+          const steps = 48;
+          for (let s = 0; s <= steps; s++) {
+            const xv = lo + (hi - lo) * (s / steps);
+            ctx.lineTo(xToPx(xv), yToPx(normalPDF(xv, mu, sigma)));
+          }
+          ctx.lineTo(xToPx(hi), padT + plotH);
+          ctx.closePath();
+          ctx.fillStyle = fillCol;
+          ctx.fill();
+        };
+
+        // Core interior [a, b]
+        drawCurveArea(sim.m1A, sim.m1B, 'rgba(139, 92, 246, 0.24)');
+        // Left & right 0.5 Continuity Correction strips
+        drawCurveArea(ccLow, Math.min(ccHigh, sim.m1A), 'rgba(245, 158, 11, 0.48)');
+        drawCurveArea(Math.max(ccLow, sim.m1B), ccHigh, 'rgba(245, 158, 11, 0.48)');
+      }
+
+      // 4. Theoretical Continuous Normal Curve N(mu, sigma^2)
+      if (document.getElementById('chkNormal').checked && sigma > 0) {
+        ctx.beginPath();
+        const steps = 160;
+        for (let s = 0; s <= steps; s++) {
+          const xv = xMin + (xMax - xMin) * (s / steps);
+          const px = xToPx(xv);
+          const py = yToPx(normalPDF(xv, mu, sigma));
+          if (s === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.strokeStyle = light ? '#0284c7' : '#38bdf8';
+        ctx.lineWidth = 2.6;
+        ctx.stroke();
+
+        // Mean dashed line
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = light ? '#0f766e' : '#2dd4bf';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(xToPx(mu), padT);
+        ctx.lineTo(xToPx(mu), padT + plotH);
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      // 5. Exact Binomial PMF Dots (M1 Mode)
+      if (sim.mode === 'm1' && document.getElementById('chkBinom').checked) {
+        for (let k = 0; k <= n; k++) {
+          const pk = binomPMF(n, sim.p, k);
+          const px = xToPx(k);
+          const py = yToPx(pk);
+          ctx.beginPath();
+          ctx.arc(px, py, 4.2, 0, Math.PI * 2);
+          ctx.fillStyle = '#fbbf24';
+          ctx.fill();
+          ctx.strokeStyle = '#0f172a';
+          ctx.lineWidth = 1.2;
+          ctx.stroke();
+        }
+      }
+
+      // 6. Axes & Labels
+      ctx.strokeStyle = axisColor;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padL, padT);
+      ctx.lineTo(padL, padT + plotH);
+      ctx.lineTo(padL + plotW, padT + plotH);
+      ctx.stroke();
+
+      ctx.fillStyle = labelColor;
+      ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      for (let k = 0; k <= n; k++) {
+        ctx.fillText(String(k), xToPx(k), padT + plotH + 15);
+      }
+
+      // Y-axis ticks
+      ctx.textAlign = 'right';
+      [0, 0.5, 1.0].forEach(frac => {
+        const val = maxProb * frac;
+        const py = yToPx(val);
+        ctx.fillText((val * 100).toFixed(0) + '%', padL - 6, py + 4);
+      });
+
+      ctx.restore();
+    }
+
+    /* =========================================================================
+       5. CURRICULUM READOUTS (CORE MATH VS M1)
+       ========================================================================= */
+    function refreshAllReadouts() {
+      const n = sim.rows;
+      const { mu, sigma } = getMoments();
+
+      document.getElementById('hudTotal').textContent = sim.totalCount.toLocaleString();
+      document.getElementById('hudActive').textContent = board3D.activeBalls.length;
+      document.getElementById('hudParamsLine').innerHTML =
+        'Board Rows n = <strong>' + n + '</strong>' +
+        (sim.mode === 'm1' ? ' &nbsp;|&nbsp; p = <strong>' + sim.p.toFixed(2) + '</strong>' : '') +
+        ' &nbsp;|&nbsp; Mean &mu; = <strong>' + mu.toFixed(2) + '</strong>, SD &sigma; = <strong>' + sigma.toFixed(2) + '</strong>';
+
+      document.getElementById('stCount').textContent = sim.totalCount.toLocaleString();
+      if (sim.totalCount > 0) {
+        const sampleMean = sim.sumX / sim.totalCount;
+        const sampleVar = Math.max(0, sim.sumX2 / sim.totalCount - sampleMean * sampleMean);
+        const sampleSD = Math.sqrt(sampleVar);
+        document.getElementById('stMean').textContent = sampleMean.toFixed(2) + ' / ' + mu.toFixed(2);
+        document.getElementById('stSD').textContent = sampleSD.toFixed(2) + ' / ' + sigma.toFixed(2);
+      } else {
+        document.getElementById('stMean').textContent = '— / ' + mu.toFixed(2);
+        document.getElementById('stSD').textContent = '— / ' + sigma.toFixed(2);
+      }
+
+      if (sim.mode === 'core') {
+        document.getElementById('stExtraLabel').textContent = 'Symmetry Axis (Mean)';
+        document.getElementById('stExtraVal').textContent = 'x = ' + mu.toFixed(2);
+        updateCoreEmpiricalTable();
+        updateCoreZSpotter();
+      } else {
+        document.getElementById('stExtraLabel').textContent = 'Variance np(1 − p)';
+        document.getElementById('stExtraVal').textContent = (n * sim.p * (1 - sim.p)).toFixed(2);
+        updateM1Analysis();
+      }
+
+      drawDistChart();
+    }
+
+    function updateCoreEmpiricalTable() {
+      const { mu, sigma } = getMoments();
+      const tbody = document.getElementById('coreEmpBody');
+      const specs = [
+        { k: 1, label: 'μ ± 1σ (1 SD)', target: '≈ 68.3%' },
+        { k: 2, label: 'μ ± 2σ (2 SD)', target: '≈ 95.4%' },
+        { k: 3, label: 'μ ± 3σ (3 SD)', target: '≈ 99.7%' }
+      ];
+
+      tbody.innerHTML = '';
+      specs.forEach(sp => {
+        const lo = mu - sp.k * sigma;
+        const hi = mu + sp.k * sigma;
+        let countIn = 0;
+        for (let b = 0; b <= sim.rows; b++) {
+          // Include integer bins whose centers fall inside [lo, hi] (with tiny tolerance for floating point)
+          if (b >= lo - 1e-7 && b <= hi + 1e-7) {
+            countIn += sim.bins[b];
+          }
+        }
+        const obsPct = sim.totalCount > 0 ? ((countIn / sim.totalCount) * 100).toFixed(1) + '%' : '—';
+        const tr = document.createElement('tr');
+        if (sim.coreBand === sp.k) tr.className = 'active-band';
+        tr.innerHTML =
+          '<td>' + sp.label + '</td>' +
+          '<td>[' + lo.toFixed(2) + ', ' + hi.toFixed(2) + ']</td>' +
+          '<td>' + countIn.toLocaleString() + '</td>' +
+          '<td><strong>' + obsPct + '</strong></td>' +
+          '<td>' + sp.target + '</td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateCoreZSpotter() {
+      const x = parseInt(document.getElementById('rngCoreX').value, 10);
+      sim.coreSpotX = x;
+      document.getElementById('lblCoreBinX').textContent = 'Bin x = ' + x;
+
+      const { mu, sigma } = getMoments();
+      const diff = x - mu;
+      const z = sigma > 0 ? diff / sigma : 0;
+      const absZ = Math.abs(z);
+      let bandDesc = 'beyond 3 standard deviations (very rare tail outcome)';
+      if (absZ <= 1.0001) bandDesc = 'within μ ± 1σ (inside the central 68% region)';
+      else if (absZ <= 2.0001) bandDesc = 'within μ ± 2σ (inside the 95% region)';
+      else if (absZ <= 3.0001) bandDesc = 'within μ ± 3σ (inside the 99.7% region)';
+
+      const countHere = sim.bins[x] || 0;
+      const pctHere = sim.totalCount > 0 ? ((countHere / sim.totalCount) * 100).toFixed(1) + '%' : '0.0%';
+
+      document.getElementById('coreZReadout').innerHTML =
+        '<div><strong>Standard Score Formula:</strong> z = (x &minus; &mu;) / &sigma; = (' +
+        x + ' &minus; ' + mu.toFixed(2) + ') / ' + sigma.toFixed(2) + ' = <strong>' +
+        (z >= 0 ? '+' : '') + z.toFixed(2) + '</strong></div>' +
+        '<div><strong>Interpretation:</strong> Bin ' + x + ' lies <strong>' + absZ.toFixed(2) +
+        ' SD</strong> ' + (diff === 0 ? 'right at' : (diff > 0 ? 'above' : 'below')) +
+        ' the mean &mdash; ' + bandDesc + '. Observed in Bin ' + x + ': <strong>' +
+        countHere.toLocaleString() + ' balls (' + pctHere + ')</strong>.</div>';
+
+      drawDistChart();
+    }
+
+    function setCoreBand(band, btnEl) {
+      sim.coreBand = band;
+      document.querySelectorAll('#coreSection .btn[data-band]').forEach(b => b.classList.remove('active-toggle'));
+      btnEl.classList.add('active-toggle');
+      updateCoreEmpiricalTable();
+      drawDistChart();
+    }
+
+    /* M1 Mode Calculations & Continuity Correction Comparison */
+    function onM1BoundsChange(which) {
+      let a = parseInt(document.getElementById('rngBoundA').value, 10);
+      let b = parseInt(document.getElementById('rngBoundB').value, 10);
+      if (which === 'a' && a > b) {
+        b = a;
+        document.getElementById('rngBoundB').value = b;
+      } else if (which === 'b' && b < a) {
+        a = b;
+        document.getElementById('rngBoundA').value = a;
+      }
+      sim.m1A = a;
+      sim.m1B = b;
+      document.getElementById('lblBoundA').textContent = 'a = ' + a;
+      document.getElementById('lblBoundB').textContent = 'b = ' + b;
+      refreshAllReadouts();
+    }
+
+    function updateM1Analysis() {
+      const n = sim.rows;
+      const p = sim.p;
+      const { mu, variance, sigma } = getMoments();
+      const np = n * p;
+      const nq = n * (1 - p);
+
+      const pill = document.getElementById('m1ValidityPill');
+      const isValid = np > 5 && nq > 5;
+      pill.className = 'validity-pill ' + (isValid ? 'ok' : 'warn');
+      pill.textContent = 'np = ' + np.toFixed(1) + ', n(1−p) = ' + nq.toFixed(1) +
+        (isValid ? ' (Both > 5: Good Approx)' : ' (≤ 5: Skewed / Small Sample)');
+
+      const a = sim.m1A;
+      const b = sim.m1B;
+
+      // 1. Sample proportion
+      let sampleHits = 0;
+      for (let k = a; k <= b; k++) sampleHits += sim.bins[k];
+      const pSample = sim.totalCount > 0 ? sampleHits / sim.totalCount : null;
+
+      // 2. Exact Binomial P(a <= X <= b)
+      let pExact = 0;
+      for (let k = a; k <= b; k++) pExact += binomPMF(n, p, k);
+
+      // 3. Normal WITH Continuity Correction P(a - 0.5 < Y < b + 0.5)
+      const zLowCC = (a - 0.5 - mu) / sigma;
+      const zHighCC = (b + 0.5 - mu) / sigma;
+      const pNormCC = normalCDF(zHighCC) - normalCDF(zLowCC);
+
+      // 4. Normal WITHOUT Continuity Correction P(a < Y < b)
+      const zLowNo = (a - mu) / sigma;
+      const zHighNo = (b - mu) / sigma;
+      const pNormNo = normalCDF(zHighNo) - normalCDF(zLowNo);
+
+      document.getElementById('m1StepsBox').innerHTML =
+        '<div><strong>1. Model:</strong> X ~ B(' + n + ', ' + p.toFixed(2) + ') &approx; Y ~ N(' +
+        mu.toFixed(2) + ', ' + variance.toFixed(2) + '), with &sigma; = ' + sigma.toFixed(3) + '</div>' +
+        '<div><strong>2. Continuity Correction (amber strips on chart):</strong> P(' + a + ' &le; X &le; ' + b +
+        ') &approx; P(' + (a - 0.5).toFixed(1) + ' &lt; Y &lt; ' + (b + 0.5).toFixed(1) + ')</div>' +
+        '<div><strong>3. Standardize to Z ~ N(0, 1):</strong> P(' + zLowCC.toFixed(3) + ' &lt; Z &lt; ' +
+        zHighCC.toFixed(3) + ') = &Phi;(' + zHighCC.toFixed(3) + ') &minus; &Phi;(' + zLowCC.toFixed(3) +
+        ') = <strong>' + pNormCC.toFixed(4) + '</strong></div>';
+
+      const tbody = document.getElementById('m1CompareBody');
+      tbody.innerHTML =
+        '<tr>' +
+          '<td>Simulated Sample Proportion</td>' +
+          '<td>' + sampleHits.toLocaleString() + ' / ' + sim.totalCount.toLocaleString() + '</td>' +
+          '<td><strong>' + (pSample !== null ? pSample.toFixed(4) : '—') + '</strong></td>' +
+          '<td>' + (pSample !== null ? Math.abs(pSample - pExact).toFixed(4) : '—') + '</td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td>Exact Binomial PMF Sum</td>' +
+          '<td>&Sigma; C(n, k) p<sup>k</sup>(1&minus;p)<sup>n&minus;k</sup></td>' +
+          '<td><strong>' + pExact.toFixed(4) + '</strong></td>' +
+          '<td>0.0000 (Exact)</td>' +
+        '</tr>' +
+        '<tr class="active-band">' +
+          '<td>Normal <strong>WITH</strong> Continuity Correction</td>' +
+          '<td>P(' + (a - 0.5).toFixed(1) + ' &lt; Y &lt; ' + (b + 0.5).toFixed(1) + ')</td>' +
+          '<td><strong>' + pNormCC.toFixed(4) + '</strong></td>' +
+          '<td><strong>' + Math.abs(pNormCC - pExact).toFixed(4) + '</strong></td>' +
+        '</tr>' +
+        '<tr>' +
+          '<td>Normal <em>without</em> C.C. (Common Mistake)</td>' +
+          '<td>P(' + a + ' &lt; Y &lt; ' + b + ')</td>' +
+          '<td>' + pNormNo.toFixed(4) + '</td>' +
+          '<td style="color:var(--rose); font-weight:700;">' + Math.abs(pNormNo - pExact).toFixed(4) + '</td>' +
+        '</tr>';
+    }
+
+    /* =========================================================================
+       6. UI CONTROLS & MODE SWITCHING
+       ========================================================================= */
+    function setCurriculumMode(mode) {
+      sim.mode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+
+      document.getElementById('coreSection').classList.toggle('active', mode === 'core');
+      document.getElementById('m1Section').classList.toggle('active', mode === 'm1');
+      document.getElementById('probSliderWrap').style.display = mode === 'm1' ? 'block' : 'none';
+      document.getElementById('lblChkBinom').style.display = mode === 'm1' ? 'inline-flex' : 'none';
+
+      const badge = document.getElementById('modeBadge');
+      if (mode === 'core') {
+        badge.className = 'tag';
+        badge.textContent = 'Core Mode (Symmetric p = 0.5)';
+        document.getElementById('lblRowsTitle').textContent = 'Peg Rows (Controls Spread σ)';
+        if (Math.abs(sim.p - 0.5) > 1e-6) {
+          sim.p = 0.50;
+          document.getElementById('rngProb').value = '0.50';
+          document.getElementById('lblProbVal').textContent = '0.50';
+          resetBoard();
+          return;
+        }
+      } else {
+        badge.className = 'tag m1-tag';
+        badge.textContent = 'M1 Mode: X ~ B(n, p) → N(np, npq)';
+        document.getElementById('lblRowsTitle').textContent = 'Trials / Peg Rows (n)';
+      }
+
+      refreshAllReadouts();
+    }
+
+    function toggleStream() {
+      sim.streaming = !sim.streaming;
+      const btn = document.getElementById('streamBtn');
+      btn.textContent = sim.streaming ? 'Pause Stream' : 'Start Stream';
+      btn.classList.toggle('amber', sim.streaming);
+      btn.classList.toggle('primary', !sim.streaming);
+    }
+
+    function onRowsChange(val) {
+      sim.rows = parseInt(val, 10);
+      document.getElementById('lblRowsVal').textContent = sim.rows + ' rows';
+
+      // Clamp Core spotter & M1 bounds to new [0, n]
+      const coreSlider = document.getElementById('rngCoreX');
+      coreSlider.max = sim.rows;
+      sim.coreSpotX = Math.min(sim.rows, Math.round(sim.rows * 0.65));
+      coreSlider.value = sim.coreSpotX;
+
+      const sliderA = document.getElementById('rngBoundA');
+      const sliderB = document.getElementById('rngBoundB');
+      sliderA.max = sim.rows;
+      sliderB.max = sim.rows;
+      sim.m1A = Math.max(0, Math.round(sim.rows * 0.33));
+      sim.m1B = Math.min(sim.rows, Math.round(sim.rows * 0.67));
+      sliderA.value = sim.m1A;
+      sliderB.value = sim.m1B;
+      document.getElementById('lblBoundA').textContent = 'a = ' + sim.m1A;
+      document.getElementById('lblBoundB').textContent = 'b = ' + sim.m1B;
+
+      resetBoard();
+    }
+
+    function onProbChange(val) {
+      sim.p = parseFloat(val);
+      document.getElementById('lblProbVal').textContent = sim.p.toFixed(2);
+      resetBoard();
+    }
+
+    function onSpeedChange(val) {
+      sim.speedLevel = parseInt(val, 10);
+      const names = { 1: 'Slow', 2: 'Normal', 3: 'Turbo' };
+      document.getElementById('lblSpeedVal').textContent = names[sim.speedLevel];
+    }
+
+    function resetBoard() {
+      sim.bins = new Array(sim.rows + 1).fill(0);
+      sim.totalCount = 0;
+      sim.sumX = 0;
+      sim.sumX2 = 0;
+      sim.lastTraceDecisions = null;
+      sim.lastTraceBin = null;
+      document.getElementById('hudTraceBox').innerHTML =
+        'Click <strong>Trace 1 Ball</strong> to highlight a single rolling path down the inclined pegs.';
+      rebuildBoardGeometry();
+      refreshAllReadouts();
+    }
+
+    function toggleProjectorTheme() {
+      sim.lightTheme = !sim.lightTheme;
+      document.body.classList.toggle('projector-light', sim.lightTheme);
+      const btn = document.getElementById('themeBtn');
+      btn.textContent = sim.lightTheme ? 'Dark Studio Mode' : 'Projector Light Mode';
+      btn.classList.toggle('active', sim.lightTheme);
+      drawDistChart();
+    }
+
+    function onResizeAll() {
+      if (board3D.host) {
+        const r = board3D.host.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          if (board3D.useWebGL && board3D.renderer && board3D.camera) {
+            board3D.camera.aspect = r.width / r.height;
+            board3D.camera.updateProjectionMatrix();
+            board3D.renderer.setSize(r.width, r.height);
+          } else if (board3D.fallbackCanvas) {
+            const dpr = window.devicePixelRatio || 1;
+            board3D.fallbackCanvas.width = r.width * dpr;
+            board3D.fallbackCanvas.height = r.height * dpr;
+          }
+        }
+      }
+      drawDistChart();
+    }
+
+    /* =========================================================================
+       7. INITIALIZE & URL QUERY ROUTING (?mode=core | ?mode=m1)
+       ========================================================================= */
+    window.addEventListener('DOMContentLoaded', () => {
+      init3DBoard();
+      const params = new URLSearchParams(window.location.search);
+      const qMode = (params.get('mode') || '').toLowerCase();
+      if (qMode === 'm1') {
+        setCurriculumMode('m1');
+      } else {
+        setCurriculumMode('core');
+      }
+      onResizeAll();
+    });
+  </script>
+</body>
+</html>
